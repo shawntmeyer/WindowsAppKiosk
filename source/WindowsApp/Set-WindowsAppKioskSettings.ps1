@@ -113,45 +113,10 @@ This version parameter allows tracking of the installed version using configurat
 param (
     [switch]$InstallWindowsApp,
 
-    [Parameter(Mandatory, ParameterSetName = 'AutologonShellLauncher')]
-    [Parameter(Mandatory, ParameterSetName = 'AutoLogonMultiAppKiosk')]
-    [switch]$AutoLogonKiosk,
-
-    [Parameter(Mandatory, ParameterSetName = 'AutologonShellLauncher')]
-    [Parameter(Mandatory, ParameterSetName = 'AutoLogonMultiAppKiosk')]
     [ValidateSet('Disabled', 'ResetAppOnCloseOnly', 'ResetAppAfterConnection', 'ResetAppOnCloseOrIdle')]
     [string]$WindowsAppAutoLogoffConfig,
 
-    [Parameter(Mandatory = $false, ParameterSetName = 'AutologonShellLauncher')]
-    [Parameter(Mandatory = $false, ParameterSetName = 'AutoLogonMultiAppKiosk')]
     [int]$WindowsAppAutoLogoffTimeInterval,
-
-    [Parameter(ParameterSetName = 'DirectLogonShellLauncher')]
-    [Parameter(ParameterSetName = 'DirectLogonMultiAppKiosk')]
-    [ValidateRange(5, 60)]    
-    [int]$IdleLockTimeoutMinutes,
-
-    [Parameter(ParameterSetName = 'DirectLogonShellLauncher')]
-    [Parameter(ParameterSetName = 'DirectLogonMultiAppKiosk')]
-    [ValidateRange(5, 180)]    
-    [int]$IdleLogoffTimeoutMinutes,
-    
-    [Parameter(ParameterSetName = 'DirectLogonShellLauncher')]
-    [Parameter(ParameterSetName = 'DirectLogonMultiAppKiosk')]
-    [switch]$SharedPC,
-
-    [Parameter(ParameterSetName = 'AutoLogonMultiAppKiosk')]
-    [Parameter(ParameterSetName = 'DirectLogonMultiAppKiosk')]
-    [switch]$ShowSettings,
-
-    [Parameter(Mandatory, ParameterSetName = 'AutologonShellLauncher')]
-    [Parameter(Mandatory, ParameterSetName = 'DirectLogonShellLauncher')]
-    [switch]$WindowsAppShell,
-
-    [Parameter(ParameterSetName = 'DirectLogonShellLauncher')]
-    [Parameter(ParameterSetName = 'DirectLogonMultiAppKiosk')]
-    [ValidateSet('Lock', 'Logoff')]
-    [string]$SmartCardRemovalAction,
 
     [Parameter()]
     [switch]$ConfigureAutomaticMaintenance,
@@ -192,32 +157,6 @@ If ($WindowsAppAutoLogoffConfig -eq 'ResetAppOnCloseOrIdle' -and $null -eq $Wind
 
 If ($SetPowerPolicies -and $null -eq $IdleSleepTimeoutMinutes) {
     Throw "You must specify a value for 'IdleSleepTimeoutMinutes' when 'SetPowerPolicies' is used"
-} 
-
-# Validate idle timeout parameter ordering: IdleLockTimeoutMinutes < IdleLogoffTimeoutMinutes < IdleSleepTimeoutMinutes
-# Ensure minimum 15-minute gap between each timeout level
-
-If ($IdleLogoffTimeoutMinutes -and -not $IdleLockTimeoutMinutes) {
-    Throw "IdleLogoffTimeoutMinutes requires IdleLockTimeoutMinutes to be specified."
-}
-
-If ($IdleLockTimeoutMinutes -and $IdleLogoffTimeoutMinutes) {
-    If ($IdleLogoffTimeoutMinutes -lt ($IdleLockTimeoutMinutes + 15)) {
-        Throw "IdleLogoffTimeoutMinutes ($IdleLogoffTimeoutMinutes) must be at least 15 minutes greater than IdleLockTimeoutMinutes ($IdleLockTimeoutMinutes)."
-    }
-}
-
-If ($IdleLogoffTimeoutMinutes -and $IdleSleepTimeoutMinutes) {
-    If ($IdleSleepTimeoutMinutes -lt ($IdleLogoffTimeoutMinutes + 15)) {
-        Throw "IdleSleepTimeoutMinutes ($IdleSleepTimeoutMinutes) must be at least 15 minutes greater than IdleLogoffTimeoutMinutes ($IdleLogoffTimeoutMinutes)."
-    }
-}
-
-If ($IdleLockTimeoutMinutes -and $IdleSleepTimeoutMinutes) {
-    $Gap = If ($IdleLogoffTimeoutMinutes) { 30 } Else { 15 }
-    If ($IdleSleepTimeoutMinutes -lt ($IdleLockTimeoutMinutes + $Gap)) {
-        Throw "IdleSleepTimeoutMinutes ($IdleSleepTimeoutMinutes) must be at least $Gap minutes greater than IdleLockTimeoutMinutes ($IdleLockTimeoutMinutes)."
-    }
 } 
 
 # Restart in 64-Bit PowerShell if not already running in 64-bit mode
@@ -263,13 +202,11 @@ $DirAppLocker = Join-Path -Path $Script:Dir -ChildPath "AppLocker"
 $FileAppLockerClear = Join-Path -Path $DirAppLocker -ChildPath "ClearAppLockerPolicy.xml"
 $DirApps = Join-Path -Path $Script:Dir -ChildPath 'Apps'
 $DirAssignedAccess = Join-Path -Path $Script:Dir -ChildPath 'AssignedAccess'
-$DirMultiAppSettings = Join-Path -Path $DirAssignedAccess -ChildPath 'MultiApp'
 $DirProvisioningPackages = Join-Path -Path $Script:Dir -ChildPath 'ProvisioningPackages'
 $DirShellLauncherSettings = Join-Path -Path $DirAssignedAccess -ChildPath 'ShellLauncher'
 $DirGPO = Join-Path -Path $Script:Dir -ChildPath "GPOSettings"
 $DirKiosk = Join-Path -Path $env:SystemDrive -ChildPath "KioskSettings"
 $DirTools = Join-Path -Path $Script:Dir -ChildPath "Tools"
-$DirUserLogos = Join-Path -Path $Script:Dir -ChildPath "UserLogos"
 $DirFunctions = Join-Path -Path $Script:Dir -ChildPath "Scripts\Functions"
 $DirSchedTasksScripts = Join-Path -Path $Script:Dir -ChildPath "Scripts\ScheduledTasks"
 
@@ -400,73 +337,27 @@ Update-ACLInheritance -Path $DirKiosk -DisableInheritance $true -PreserveInherit
 
 #endregion KioskSettings Directory
 
+# Copy Website file
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 42 -Message "Copying Website file to KioskSettings Directory."
+Copy-Item -Path (Join-Path -Path $DirShellLauncherSettings -childPath 'windowsapp.html') -Destination "$DirKiosk\Index.html" -Force
+
 #region Assigned Access Configuration
 
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 50 -Message "Starting Assigned Access Configuration Section."
-If ($WindowsAppShell) {
-    If ($AutoLogonKiosk) {
-        $ConfigFile = Join-Path -Path $DirShellLauncherSettings -ChildPath "WindowsApp_AutoLogon.xml"
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 51 -Message "Enabling Windows App Shell Launcher with Autologon via WMI MDM bridge. This could take several minutes."
-    }
-    Else {
-        $ConfigFile = Join-Path -Path $DirShellLauncherSettings -ChildPath "WindowsApp.xml"
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 51 -Message "Enabling Windows App Shell Launcher via WMI MDM bridge. This could take several minutes."
-    }
-    $XmlFile = Join-Path -Path $DirKiosk -ChildPath "AssignedAccessShellLauncher.xml"
-    Copy-Item -Path $ConfigFile -Destination $XmlFile -Force
-    Set-AssignedAccessShellLauncher -FilePath $XmlFile
-    If (Get-AssignedAccessShellLauncher) {
-        [xml]$Xml = Get-Content -Path $XmlFile
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 52 -Message "Shell Launcher configuration successfully applied.`n-----BEGIN CONFIGURATION-----`n$Xml`n-----END CONFIGURATION-----"
-    }
-    Else {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Error -EventId 53 -Message "Shell Launcher configuration failed. Computer should be restarted first."
-        Exit 1618
-    }
+
+$ConfigFile = Join-Path -Path $DirShellLauncherSettings -ChildPath "Edge_AutoLogon.xml"
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 51 -Message "Enabling Windows App Shell Launcher with Autologon via WMI MDM bridge. This could take several minutes."
+        
+$XmlFile = Join-Path -Path $DirKiosk -ChildPath "AssignedAccessShellLauncher.xml"
+Copy-Item -Path $ConfigFile -Destination $XmlFile -Force
+Set-AssignedAccessShellLauncher -FilePath $XmlFile
+If (Get-AssignedAccessShellLauncher) {
+    [xml]$Xml = Get-Content -Path $XmlFile
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 52 -Message "Shell Launcher configuration successfully applied.`n-----BEGIN CONFIGURATION-----`n$Xml`n-----END CONFIGURATION-----"
 }
 Else {
-    If ($AutoLogonKiosk) {
-        If ($ShowSettings) {
-            Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 55 -Message "Configuring MultiApp Kiosk settings for Windows App with Settings and Autologon."
-            $ConfigFile = Join-Path -Path $DirMultiAppSettings -ChildPath "WindowsApp_Settings_AutoLogon.xml"
-        }
-        Else {
-            Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 56 -Message "Configuring MultiApp Kiosk settings for Windows App and Autologon."
-            $ConfigFile = Join-Path -Path $DirMultiAppSettings -ChildPath "WindowsApp_AutoLogon.xml"
-        }
-    }
-    Else {
-        If ($ShowSettings) {
-            Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 56 -Message "Configuring MultiApp Kiosk settings for Windows App and Settings."
-            $ConfigFile = Join-Path -Path $DirMultiAppSettings -ChildPath "WindowsApp_Settings.xml"
-        }
-        Else {
-            Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 56 -Message "Configuring MultiApp Kiosk settings for Windows App."
-            $ConfigFile = Join-Path -Path $DirMultiAppSettings -ChildPath "WindowsApp.xml"
-        }
-    }  
-    $XmlPath = Join-Path $DirKiosk -ChildPath 'AssignedAccessConfiguration.xml'
-    Copy-Item -Path $ConfigFile -Destination $XmlPath -Force
-    If ($IdleLogoffTimeoutMinutes) {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 135 -Message "Adding PowerShell to Allowed Apps in Assigned Access Configuration."
-        [xml]$Xml = Get-Content -Path $XmlPath
-        $NsMgr = New-Object System.Xml.XmlNamespaceManager($Xml.NameTable)
-        $NsMgr.AddNamespace("ns", "http://schemas.microsoft.com/AssignedAccess/2017/config")            
-        $AllowedApps = $Xml.SelectSingleNode("//ns:AllowedApps", $NsMgr)        
-        $PowerShellApp = $Xml.CreateElement("App", "http://schemas.microsoft.com/AssignedAccess/2017/config")
-        $PowerShellApp.SetAttribute("DesktopAppPath", "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe")
-        $AllowedApps.AppendChild($PowerShellApp) | Out-Null                    
-        $Xml.Save($XmlPath)
-    }
-    Set-AssignedAccessConfiguration -FilePath $XmlPath
-    If (Get-AssignedAccessConfiguration) {
-        [xml]$Xml = Get-Content -Path $XmlPath
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 58 -Message "Assigned Access configuration successfully applied.`n-----BEGIN CONFIGURATION-----`n$Xml`n-----END CONFIGURATION-----"
-    }
-    Else {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Error -EventId 59 -Message "Assigned Access configuration failed. Computer should be restarted first."
-        Exit 1618        
-    }  
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Error -EventId 53 -Message "Shell Launcher configuration failed. Computer should be restarted first."
+    Exit 1618
 }
 
 #endregion Assigned Access Launcher
@@ -480,30 +371,17 @@ $ProvisioningPackages += [PSCustomObject]@{
     Purpose = "Disable Windows Spotlight features to prevent unwanted content on lock screen and optimize performance"
 }
 
-If ($SharedPC) {
-    $ProvisioningPackages += [PSCustomObject]@{
-        Name    = 'SharedPC.ppkg'
-        Purpose = "Enable SharedPC mode for automatic profile cleanup and direct logon"
-    }
+
+# These settings are already included in the SharedPC provisioning package, so only add it when not using SharedPC mode.
+$ProvisioningPackages += [PSCustomObject]@{
+    Name    = 'DisableFirstLogonAnimation.ppkg'
+    Purpose = "Disable first sign-in animation to speed up initial logon"
 }
-Else {
-    # These settings are already included in the SharedPC provisioning package, so only add it when not using SharedPC mode.
-    $ProvisioningPackages += [PSCustomObject]@{
-        Name    = 'DisableFirstLogonAnimation.ppkg'
-        Purpose = "Disable first sign-in animation to speed up initial logon"
-    }
-    $ProvisioningPackages += [PSCustomObject]@{
-        Name    = 'DisableAdvertisingId.ppkg'
-        Purpose = "Disable advertising ID for privacy and to prevent targeted ads"
-    }
+$ProvisioningPackages += [PSCustomObject]@{
+    Name    = 'DisableAdvertisingId.ppkg'
+    Purpose = "Disable advertising ID for privacy and to prevent targeted ads"
 }
 
-If (!$WindowsAppShell) {
-    $ProvisioningPackages += [PSCustomObject]@{
-        Name    = 'HideStartMenuElements.ppkg'
-        Purpose = "Hide Start Menu elements to reduce interface complexity in kiosk mode"
-    }
-}
 
 New-Item -Path "$DirKiosk\ProvisioningPackages" -ItemType Directory -Force | Out-Null
 ForEach ($Package in $ProvisioningPackages) {
@@ -518,73 +396,21 @@ ForEach ($Package in $ProvisioningPackages) {
 
 #region Local GPO Settings
 
-if ($WindowsAppShell) {
-    $null = cmd /c lgpo.exe /t "$DirGPO\Ctrl+Alt+Del-HideTaskManager.txt" '2>&1'
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Disabled Task Manager via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
-    $null = cmd /c lgpo.exe /t "$DirGPO\HideAndRestrictDrives.txt" '2>&1'
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Hid and restricted access to drives via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
-    if ($AutoLogonKiosk) {
-        $null = cmd /c lgpo.exe /t "$DirGPO\Ctrl+Alt+Del-HideLock-HideSignOut-HideSwitchUser.txt" '2>&1'
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Removed logoff, change password, lock workstation, and fast user switching entry points via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
-    }
-    If (!$SharedPC) {
-        $null = cmd /c lgpo.exe /t "$DirGPO\DisablePrivacyExperience.txt" '2>&1'
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Disabled the First Logon Privacy Experience via the Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
-    }
-}
-Else {
-    $null = cmd /c lgpo.exe /t "$DirGPO\HideWindowsSecurityControl.txt" '2>&1'
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Hide Windows Security notification area control via Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
-    If ($ShowSettings) {
-        $null = cmd /c lgpo.exe /t "$DirGPO\RestrictControlPanelAndSettings.txt" '2>&1'
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Restricted Settings App and Control Panel to allow only Display Settings for kiosk user via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
-    }
-    If ($AutoLogonKiosk) {
-        $null = cmd /c lgpo.exe /t "$DirGPO\Ctrl+Alt+Del-HideLock.txt" '2>&1'
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Removed Lock from the CTRL+ALT+DEL screen via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
-    }
-}
+$null = cmd /c lgpo.exe /t "$DirGPO\AllowedOrigins.txt" '2>&1'
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Configured ms-avd url protocol to launch windows app automatically via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
 
-If ($AutoLogonKiosk) {
-    $null = cmd /c lgpo.exe /t "$DirGPO\DisablePasswordForUnlock.txt" '2>&1'
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Disabled password requirement for screen saver lock and wake from sleep via Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
-    # Configure User Logos
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 70 -Message "Starting User Logo configuration."
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 71 -Message "Backing up current User Logo files to '$DirKiosk\UserLogos'."
-    Copy-Item -Path "$env:ProgramData\Microsoft\User Account Pictures" -Destination "$DirKiosk\UserLogos" -Force
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 72 -Message "Copying User Logo files to '$env:ProgramData\Microsoft\User Account Pictures'."
-    Get-ChildItem -Path $DirUserLogos | Copy-Item -Destination "$env:ProgramData\Microsoft\User Account Pictures" -Force
-    # Configure User Logos to use default images
-    $null = cmd /c lgpo.exe /t "$DirGPO\UserLogosDefault.txt" '2>&1'
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 70 -Message "Configured User Logos to use default via Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
-}
-Else {
-    If ($SmartCardRemovalAction) {
-        # Ensure Smart Card Removal Policy service is running and set to automatic
-        $SCPolicyService = Get-Service -Name 'SCPolicySvc' -ErrorAction Stop
-        If ($SCPolicyService.StartType -ne 'Automatic') {
-            Set-Service -Name 'SCPolicySvc' -StartupType Automatic
-            Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Smart Card Removal Policy service startup type set to Automatic."
-        }           
-    }
-    If ($SmartCardRemovalAction -eq 'Lock') {
-        $null = cmd /c lgpo /s "$DirGPO\SmartCardLockWorkstation.inf" '2>&1'
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Set 'Interactive logon: Smart Card Removal behavior' to 'Lock Workstation' via Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
-    }
-    ElseIf ($SmartCardRemovalAction -eq 'Logoff') {
-        $null = cmd /c lgpo /s "$DirGPO\SmartCardLogOffWorkstation.inf" '2>&1'
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Set 'Interactive logon: Smart Card Removal behavior' to 'Force Logoff Workstation' via Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
-    }
-    If ($IdleLockTimeoutMinutes) {
-        # Will lock the system via the inactivity timeout built-in policy which locks the screen after inactivity.
-        $sourceFile = Join-Path -Path $DirGPO -ChildPath 'MachineInactivityTimeout.inf'
-        $outFile = Join-Path -Path "$env:SystemRoot\SystemTemp" -ChildPath 'MachineInactivityTimeout.inf'
-        (Get-Content -Path $SourceFile).Replace('<Seconds>', ($IdleLockTimeoutMinutes * 60)) | Out-File $OutFile
-        $null = cmd /c lgpo /s "$outFile" '2>&1'
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Set 'Interactive logon: Machine inactivity limit' to '$($IdleLockTimeoutMinutes * 60) seconds' via Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
-        Remove-Item -Path $outFile -Force -ErrorAction SilentlyContinue
-    }
-}
+$null = cmd /c lgpo.exe /t "$DirGPO\Ctrl+Alt+Del-HideTaskManager.txt" '2>&1'
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Disabled Task Manager via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
+$null = cmd /c lgpo.exe /t "$DirGPO\HideAndRestrictDrives.txt" '2>&1'
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Hid and restricted access to drives via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
+    
+$null = cmd /c lgpo.exe /t "$DirGPO\Ctrl+Alt+Del-HideLock-HideSignOut-HideSwitchUser.txt" '2>&1'
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Removed logoff, change password, lock workstation, and fast user switching entry points via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"  
+$null = cmd /c lgpo.exe /t "$DirGPO\DisablePrivacyExperience.txt" '2>&1'
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Disabled the First Logon Privacy Experience via the Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
+    
+$null = cmd /c lgpo.exe /t "$DirGPO\DisablePasswordForUnlock.txt" '2>&1'
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Disabled password requirement for screen saver lock and wake from sleep via Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
 
 If ($ConfigureAutomaticMaintenance) {
     # Configure Automatic Maintenance settings via Local Group Policy
@@ -654,17 +480,8 @@ If ($OneDrivePresent) {
     }
 }
 
-If (!$WindowsAppShell) {
-    $RegValues += [PSCustomObject]@{
-        Path         = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
-        Name         = 'StartShownOnUpgrade'
-        PropertyType = 'DWord'
-        Value        = 1
-        Description  = 'Disable Start Menu from opening automatically'
-    }
-}
 
-if (($AutoLogonKiosk -and $WindowsAppAutoLogoffConfig -ne 'Disabled') -or $SharedPC) {
+if ($WindowsAppAutoLogoffConfig -ne 'Disabled') {
     # Streamline the user experience by disabling First Run Experience
     # https://learn.microsoft.com/en-us/windows-app/windowsautologoff#skipfre
     $RegValues += [PSCustomObject]@{
@@ -676,39 +493,39 @@ if (($AutoLogonKiosk -and $WindowsAppAutoLogoffConfig -ne 'Disabled') -or $Share
     }
 }
 
-If ($AutoLogonKiosk) {
-    #Configure AutoLogoff for the Windows App
-    #https://learn.microsoft.com/en-us/windows-app/windowsautologoff
-    Switch ($WindowsAppAutoLogoffConfig) {
-        'ResetAppOnCloseOnly' {
-            $RegValues += [PSCustomObject]@{
-                Path         = 'HKLM:\SOFTWARE\Microsoft\WindowsApp'
-                Name         = 'AutoLogoffEnable'
-                PropertyType = 'DWORD'
-                Value        = 1
-                Description  = 'Sign all users out of Windows App and reset app data when the user closes the app.'
-            }
-        }
-        'ResetAppAfterConnection' {
-            $RegValues += [PSCustomObject]@{
-                Path         = 'HKLM:\SOFTWARE\Microsoft\WindowsApp'
-                Name         = 'AutoLogoffOnSuccessfulConnect'
-                PropertyType = 'DWord'
-                Value        = 1
-                Description  = 'Sign all users out of Windows App and reset app data when a successful connection to an Azure Virtual Desktop session host or Windows 365 Cloud PC is made.'
-            }
-        }
-        'ResetAppOnCloseOrIdle' {
-            $RegValues += [PSCustomObject]@{
-                Path         = 'HKLM:\SOFTWARE\Microsoft\WindowsApp'
-                Name         = 'AutoLogoffTimeInterval'
-                PropertyType = 'DWord'
-                Value        = $WindowsAppAutoLogoffTimeInterval
-                Description  = 'Sign all users out of Windows App and reset app data when the operating system is idle for the specified time interval in minutes or the user closes the app.'
-            }     
+
+#Configure AutoLogoff for the Windows App
+#https://learn.microsoft.com/en-us/windows-app/windowsautologoff
+Switch ($WindowsAppAutoLogoffConfig) {
+    'ResetAppOnCloseOnly' {
+        $RegValues += [PSCustomObject]@{
+            Path         = 'HKLM:\SOFTWARE\Microsoft\WindowsApp'
+            Name         = 'AutoLogoffEnable'
+            PropertyType = 'DWORD'
+            Value        = 1
+            Description  = 'Sign all users out of Windows App and reset app data when the user closes the app.'
         }
     }
+    'ResetAppAfterConnection' {
+        $RegValues += [PSCustomObject]@{
+            Path         = 'HKLM:\SOFTWARE\Microsoft\WindowsApp'
+            Name         = 'AutoLogoffOnSuccessfulConnect'
+            PropertyType = 'DWord'
+            Value        = 1
+            Description  = 'Sign all users out of Windows App and reset app data when a successful connection to an Azure Virtual Desktop session host or Windows 365 Cloud PC is made.'
+        }
+    }
+    'ResetAppOnCloseOrIdle' {
+        $RegValues += [PSCustomObject]@{
+            Path         = 'HKLM:\SOFTWARE\Microsoft\WindowsApp'
+            Name         = 'AutoLogoffTimeInterval'
+            PropertyType = 'DWord'
+            Value        = $WindowsAppAutoLogoffTimeInterval
+            Description  = 'Sign all users out of Windows App and reset app data when the operating system is idle for the specified time interval in minutes or the user closes the app.'
+        }     
+    }
 }
+
 
 # create the reg key restore file if it doesn't exist, else load it to compare for appending new rows.
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 97 -Message "Creating a Registry key restore file for Kiosk Mode uninstall."
@@ -776,106 +593,62 @@ If (Test-Path -Path 'HKLM:\Default') {
 
 #endregion Registry Edits
 
+
 #region AppLocker Configuration
 
-If ($WindowsAppShell) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 120 -Message "Applying AppLocker Policy to disable Edge, Notepad, and Search for the Kiosk User."
-    # If there is an existing applocker policy, back it up and store its XML for restore.
-    # Else, copy a blank policy to the restore location.
-    # Then apply the new AppLocker Policy
-    $FileAppLockerKiosk = Join-Path -Path $DirAppLocker -ChildPath "ShellLauncher.xml"
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 120 -Message "Applying AppLocker Policy to disable Edge, Notepad, and Search for the Kiosk User."
+# If there is an existing applocker policy, back it up and store its XML for restore.
+# Else, copy a blank policy to the restore location.
+# Then apply the new AppLocker Policy
+$FileAppLockerKiosk = Join-Path -Path $DirAppLocker -ChildPath "ShellLauncher.xml"
 
-    [xml]$Policy = Get-ApplockerPolicy -Local -XML
-    If ($Policy.AppLockerPolicy.RuleCollection) {
-        Get-ApplockerPolicy -Local -XML | out-file "$DirKiosk\ApplockerPolicy.xml" -force
-    }
-    Else {
-        Copy-Item -Path $FileAppLockerClear -Destination "$DirKiosk\ApplockerPolicy.xml" -Force
-    }
-    Set-AppLockerPolicy -XmlPolicy $FileAppLockerKiosk
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 121 -Message "Enabling and Starting Application Identity Service"
-    Set-Service -Name AppIDSvc -StartupType Automatic -ErrorAction SilentlyContinue
+[xml]$Policy = Get-ApplockerPolicy -Local -XML
+If ($Policy.AppLockerPolicy.RuleCollection) {
+    Get-ApplockerPolicy -Local -XML | out-file "$DirKiosk\ApplockerPolicy.xml" -force
 }
+Else {
+    Copy-Item -Path $FileAppLockerClear -Destination "$DirKiosk\ApplockerPolicy.xml" -Force
+}
+Set-AppLockerPolicy -XmlPolicy $FileAppLockerKiosk
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 121 -Message "Enabling and Starting Application Identity Service"
+Set-Service -Name AppIDSvc -StartupType Automatic -ErrorAction SilentlyContinue
+
 
 #endregion AppLocker Configuration
 
 #region Keyboard Filter
 $SchedTasksScriptsDir = Join-Path -Path $DirKiosk -ChildPath 'ScheduledTasksScripts'
 
-if ($WindowsAppShell) {
-    If (-not (Test-Path -Path $SchedTasksScriptsDir)) {
-        New-Item -Path $SchedTasksScriptsDir -ItemType Directory -Force | Out-Null
-    }
-    $TaskScriptName = 'Set-KeyboardFilterConfiguration.ps1'
-    Copy-Item -Path (Join-Path -Path $DirSchedTasksScripts -ChildPath $TaskScriptName) -Destination $SchedTasksScriptsDir -Force
-    $TaskScriptFullName = Join-Path -Path $SchedTasksScriptsDir -ChildPath $TaskScriptName
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventID 125 -Message "Enabling Keyboard filter."
-    Enable-WindowsOptionalFeature -Online -FeatureName Client-KeyboardFilter -All -NoRestart
-    # Configure Keyboard Filter after reboot
-    $TaskName = "Windows-App-Kiosk - Configure Keyboard Filter"
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 126 -Message "Creating Scheduled Task: '$TaskName'."
-    $TaskScriptEventSource = 'Keyboard Filter Configuration'
-    $TaskDescription = "Configures the Keyboard Filter"
-    New-EventLog -LogName $EventLog -Source $TaskScriptEventSource -ErrorAction SilentlyContinue     
-    $TaskTrigger = New-ScheduledTaskTrigger -AtStartup
-    $TaskScriptArgs = "-TaskName `"$TaskName`" -EventLog `"$EventLog`" -EventSource `"$TaskScriptEventSource`""
-    $TaskAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-executionpolicy bypass -file $TaskScriptFullName $TaskScriptArgs"
-    $TaskPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-    $TaskSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -MultipleInstances IgnoreNew -AllowStartIfOnBatteries
-    Register-ScheduledTask -TaskName $TaskName -Description $TaskDescription -Action $TaskAction -Settings $TaskSettings -Principal $TaskPrincipal -Trigger $TaskTrigger
-    If (Get-ScheduledTask | Where-Object { $_.TaskName -eq "$TaskName" }) {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 119 -Message "Scheduled Task created successfully."
-    }
-    Else {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Error -EventId 120 -Message "Scheduled Task not created."
-        Exit 1618
-    }
+If (-not (Test-Path -Path $SchedTasksScriptsDir)) {
+    New-Item -Path $SchedTasksScriptsDir -ItemType Directory -Force | Out-Null
 }
+$TaskScriptName = 'Set-KeyboardFilterConfiguration.ps1'
+Copy-Item -Path (Join-Path -Path $DirSchedTasksScripts -ChildPath $TaskScriptName) -Destination $SchedTasksScriptsDir -Force
+$TaskScriptFullName = Join-Path -Path $SchedTasksScriptsDir -ChildPath $TaskScriptName
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventID 125 -Message "Enabling Keyboard filter."
+Enable-WindowsOptionalFeature -Online -FeatureName Client-KeyboardFilter -All -NoRestart
+# Configure Keyboard Filter after reboot
+$TaskName = "Windows-App-Kiosk - Configure Keyboard Filter"
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 126 -Message "Creating Scheduled Task: '$TaskName'."
+$TaskScriptEventSource = 'Keyboard Filter Configuration'
+$TaskDescription = "Configures the Keyboard Filter"
+New-EventLog -LogName $EventLog -Source $TaskScriptEventSource -ErrorAction SilentlyContinue     
+$TaskTrigger = New-ScheduledTaskTrigger -AtStartup
+$TaskScriptArgs = "-TaskName `"$TaskName`" -EventLog `"$EventLog`" -EventSource `"$TaskScriptEventSource`""
+$TaskAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-executionpolicy bypass -file $TaskScriptFullName $TaskScriptArgs"
+$TaskPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+$TaskSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -MultipleInstances IgnoreNew -AllowStartIfOnBatteries
+Register-ScheduledTask -TaskName $TaskName -Description $TaskDescription -Action $TaskAction -Settings $TaskSettings -Principal $TaskPrincipal -Trigger $TaskTrigger
+If (Get-ScheduledTask | Where-Object { $_.TaskName -eq "$TaskName" }) {
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 119 -Message "Scheduled Task created successfully."
+}
+Else {
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Error -EventId 120 -Message "Scheduled Task not created."
+    Exit 1618
+}
+
 
 #endregion Keyboard Filter
-
-#region Idle Logoff Configuration
-
-If ($IdleLogoffTimeoutMinutes) {
-    # Calculate the wait time as the difference between logoff and lock timeouts
-    $IdleWaitTimeoutSeconds = ($IdleLogoffTimeoutMinutes - $IdleLockTimeoutMinutes) * 60
-    $Source = 'AutoLogoff'
-    # Create Event Log Source for AutoLogoff
-    If (-not [System.Diagnostics.EventLog]::SourceExists($Source)) {
-        New-EventLog -LogName $EventLog -Source $Source -ErrorAction SilentlyContinue
-    }
-    # Create Scheduled Task for Idle Logoff
-    $TaskName = "Windows-App-Kiosk - Idle Logoff"
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 130 -Message "Creating Scheduled Task: '$TaskName' to logoff $IdleWaitTimeoutSeconds seconds after screen lock." 
-    # Copy script
-    If (-not (Test-Path -Path $SchedTasksScriptsDir)) {
-        New-Item -Path $SchedTasksScriptsDir -ItemType Directory -Force | Out-Null
-    }
-    $TaskScriptName = 'Logoff-Idle.ps1'
-    Copy-Item -Path (Join-Path -Path $DirSchedTasksScripts -ChildPath $TaskScriptName) -Destination $SchedTasksScriptsDir -Force
-    $TaskScriptFullName = Join-Path -Path $SchedTasksScriptsDir -ChildPath $TaskScriptName
-    
-    # Create Task Action
-    $TaskAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$TaskScriptFullName`" -IdleWaitTimeoutSeconds $IdleWaitTimeoutSeconds -EventLog `"$EventLog`" -EventSource `"$Source`""
-    
-    # Create Task Principal (BUILTIN\Users)
-    $TaskPrincipal = New-ScheduledTaskPrincipal -GroupId 'S-1-5-32-545' -RunLevel Limited
-
-    # Create Task Settings - Allow parallel instances for multiple users
-    $TaskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -MultipleInstances Parallel
-    
-    # Create Session State Change Trigger for Workstation Lock (StateChange = 7)
-    $TriggerClass = Get-CimClass -ClassName MSFT_TaskSessionStateChangeTrigger -Namespace "Root/Microsoft/Windows/TaskScheduler"
-    $TaskTrigger = New-CimInstance -CimClass $TriggerClass -ClientOnly -Property @{
-        StateChange = 7  # Session Lock
-        Enabled = $true
-    }
-    
-    # Register Task
-    Register-ScheduledTask -TaskName $TaskName -Description "Logs off the user after a period of inactivity following screen lock." -Action $TaskAction -Settings $TaskSettings -Principal $TaskPrincipal -Trigger $TaskTrigger -Force | Out-Null
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 131 -Message "Scheduled Task '$TaskName' created."
-}
-#endregion Idle Logoff Configuration
 
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 150 -Message "Updating Group Policy"
 $GPUpdate = Start-Process -FilePath 'GPUpdate' -ArgumentList '/force' -Wait -PassThru

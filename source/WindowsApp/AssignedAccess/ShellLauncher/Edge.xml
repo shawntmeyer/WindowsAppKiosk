@@ -6,16 +6,17 @@
                 <DefaultAction Action="RestartShell"/>
             </Shell>
         </DefaultProfile>
-        <Profile Id="{814B6409-8C51-4EE2-95F8-DB39B70F5F90}">
-            <Shell Shell="MicrosoftCorporationII.Windows365_8wekyb3d8bbwe!Windows365" V2:AppType="UWP">
+        <Profile Id="{EDB3036B-780D-487D-A375-69369D8A8F78}">
+            <Shell Shell="%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe --kiosk file:///c:/kiosksettings/Index.html --edge-kiosk-type=fullscreen" V2:AppType="Desktop">
                 <DefaultAction Action="RestartShell"/>
             </Shell>
         </Profile>
     </Profiles>
     <Configs>
         <Config>
-            <AutoLogonAccount/>
-            <Profile Id="{814B6409-8C51-4EE2-95F8-DB39B70F5F90}"/>
+            <!-- local administrators group -->
+            <Account Sid="S-1-5-32-544"/>
+            <Profile Id="{EDB3036B-780D-487D-A375-69369D8A8F78}"/>
         </Config>
     </Configs>
 </ShellLauncherConfiguration>
