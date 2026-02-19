@@ -102,6 +102,9 @@ This switch parameter determines if power management policies are configured via
 .PARAMETER IdleSleepTimeoutMinutes
 This integer parameter specifies the number of minutes of user inactivity before the system automatically goes to sleep. This parameter is required when SetPowerPolicies is used and works in conjunction with it to manage power consumption in shared PC environments. When used with other idle timeout parameters, this must be at least 15 minutes greater than both IdleLockTimeoutMinutes and IdleLogoffTimeoutMinutes to ensure proper escalation sequence (lock → logoff → sleep).
 
+.PARAMETER KioskUrl
+This string parameter specifies the URL that Microsoft Edge will open in kiosk mode. The default value is 'file:///c:/kiosksettings/Index.html' which uses a local HTML file. When set to a different URL (e.g., a web URL), the local HTML file will not be created and Edge will be configured to open the specified URL directly.
+
 .PARAMETER Reinstall
 This switch parameter allows the script to be re-run on a system that has already been configured. It triggers the removal of existing kiosk settings before applying the new configuration.
 
@@ -116,7 +119,7 @@ param (
     [ValidateSet('Disabled', 'ResetAppOnCloseOnly', 'ResetAppAfterConnection', 'ResetAppOnCloseOrIdle')]
     [string]$WindowsAppAutoLogoffConfig,
 
-    [int]$WindowsAppAutoLogoffTimeInterval,
+    [int]$WindowsAppAutoLogoffTimeInterval = 15,
 
     [Parameter()]
     [switch]$ConfigureAutomaticMaintenance,
@@ -146,12 +149,16 @@ param (
     [int]$IdleSleepTimeoutMinutes,
 
     [Parameter()]
+    [ValidateNotNullOrEmpty()]
+    [string]$KioskUrl = 'file:///c:/kiosksettings/Index.html',
+
+    [Parameter()]
     [switch]$Reinstall,
 
     [version]$Version = '1.0.0'
 )
 
-If ($WindowsAppAutoLogoffConfig -eq 'ResetAppOnCloseOrIdle' -and $null -eq $WindowsAppAutoLogoffTimeInterval) {
+If ($WindowsAppAutoLogoffConfig -eq 'ResetAppOnCloseOrIdle' -and ($null -eq $WindowsAppAutoLogoffTimeInterval -or $WindowsAppAutoLogoffTimeInterval -eq '')) {
     Throw "You must specify a value for 'WindowsAppAutoLogoffTimeInterval' when 'WindowsAppAutoLogoffConfig' = 'ResetAppOnCloseOrIdle'"
 } 
 
@@ -337,9 +344,14 @@ Update-ACLInheritance -Path $DirKiosk -DisableInheritance $true -PreserveInherit
 
 #endregion KioskSettings Directory
 
-# Copy Website file
-Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 42 -Message "Copying Website file to KioskSettings Directory."
-Copy-Item -Path (Join-Path -Path $DirShellLauncherSettings -childPath 'windowsapp.html') -Destination "$DirKiosk\Index.html" -Force
+# Copy Website file only if using the default local file URL
+If ($KioskUrl -eq 'file:///c:/kiosksettings/Index.html') {
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 42 -Message "Copying Website file to KioskSettings Directory."
+    Copy-Item -Path (Join-Path -Path $DirShellLauncherSettings -childPath 'windowsapp.html') -Destination "$DirKiosk\Index.html" -Force
+}
+Else {
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 42 -Message "Using custom URL '$KioskUrl' for kiosk mode. Local HTML file will not be created."
+}
 
 #region Assigned Access Configuration
 
@@ -350,6 +362,13 @@ Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -
         
 $XmlFile = Join-Path -Path $DirKiosk -ChildPath "AssignedAccessShellLauncher.xml"
 Copy-Item -Path $ConfigFile -Destination $XmlFile -Force
+
+# Replace the placeholder with the actual Kiosk URL
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 51 -Message "Configuring Shell Launcher with URL: $KioskUrl"
+$XmlContent = Get-Content -Path $XmlFile -Raw
+$XmlContent = $XmlContent -replace '\{\{KIOSK_URL\}\}', $KioskUrl
+$XmlContent | Set-Content -Path $XmlFile -Force
+
 Set-AssignedAccessShellLauncher -FilePath $XmlFile
 If (Get-AssignedAccessShellLauncher) {
     [xml]$Xml = Get-Content -Path $XmlFile
@@ -402,13 +421,13 @@ Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -
 $null = cmd /c lgpo.exe /t "$DirGPO\Edge.txt" '2>&1'
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Configuring Microsoft Edge policies via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
 
-#$null = cmd /c lgpo.exe /t "$DirGPO\Ctrl+Alt+Del-HideTaskManager.txt" '2>&1'
+$null = cmd /c lgpo.exe /t "$DirGPO\Ctrl+Alt+Del-HideTaskManager.txt" '2>&1'
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Disabled Task Manager via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
 
 $null = cmd /c lgpo.exe /t "$DirGPO\HideAndRestrictDrives.txt" '2>&1'
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Hid and restricted access to drives via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
     
-#$null = cmd /c lgpo.exe /t "$DirGPO\Ctrl+Alt+Del-HideLock-HideSignOut-HideSwitchUser.txt" '2>&1'
+$null = cmd /c lgpo.exe /t "$DirGPO\Ctrl+Alt+Del-HideLock-HideSignOut-HideSwitchUser.txt" '2>&1'
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Removed logoff, change password, lock workstation, and fast user switching entry points via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"  
 
 $null = cmd /c lgpo.exe /t "$DirGPO\DisablePrivacyExperience.txt" '2>&1'
@@ -497,7 +516,6 @@ if ($WindowsAppAutoLogoffConfig -ne 'Disabled') {
         Description  = 'Disable First Run Experience in Windows App'
     }
 }
-
 
 #Configure AutoLogoff for the Windows App
 #https://learn.microsoft.com/en-us/windows-app/windowsautologoff

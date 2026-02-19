@@ -1,4 +1,4 @@
 Computer
 Software\Policies\Microsoft\Edge
 AutoLaunchProtocolsFromOrigins
-SZ:[{"allowed_origins": ["*"], "protocol": "ms-avd"}]
+SZ:[{"allowed_origins": ["*"], "protocol": "ms-avd"},{"allowed_origins": ["*"], "protocol": "evo"},{"allowed_origins": ["*"], "protocol": "workspaces"}]

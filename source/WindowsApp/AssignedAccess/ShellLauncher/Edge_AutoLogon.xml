@@ -7,7 +7,7 @@
             </Shell>
         </DefaultProfile>
         <Profile Id="{EDB3036B-780D-487D-A375-69369D8A8F78}">
-            <Shell Shell="%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe --kiosk file:///c:/kiosksettings/Index.html --edge-kiosk-type=fullscreen" V2:AppType="Desktop">
+            <Shell Shell="%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe --kiosk {{KIOSK_URL}} --edge-kiosk-type=fullscreen" V2:AppType="Desktop">
                 <DefaultAction Action="RestartShell"/>
             </Shell>
         </Profile>
