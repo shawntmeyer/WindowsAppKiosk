@@ -1,7 +1,7 @@
 User:Non-Administrators
 SOFTWARE\Policies\Microsoft\Edge
 AddressBarEditingEnabled
-DWORD:1
+DWORD:0
 
 User:Non-Administrators
 SOFTWARE\Policies\Microsoft\Edge
@@ -37,3 +37,18 @@ User:Non-Administrators
 SOFTWARE\Policies\Microsoft\Edge\URLAllowlist
 3
 SZ:file://*
+
+User:Non-Administrators
+SOFTWARE\Policies\Microsoft\Edge\URLAllowlist
+4
+SZ:ms-avd://*
+
+User:Non-Administrators
+SOFTWARE\Policies\Microsoft\Edge\URLAllowlist
+5
+SZ:workspaces://*
+
+User:Non-Administrators
+SOFTWARE\Policies\Microsoft\Edge\URLAllowlist
+6
+SZ:evo://*
