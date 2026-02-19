@@ -1,86 +1,61 @@
 <# 
 .SYNOPSIS
-    This script creates a custom Windows App kiosk configuration designed to only allow the use of the Windows App.
-    It uses a combination of Assigned Access policies, local group policy settings, provisioning packages, and registry edits to complete 
-    the configuration. There are four major configuration scenarios:
+    This script creates a custom Edge-based kiosk configuration for Azure Virtual Desktop and Windows 365 access.
+    It uses Microsoft Edge in kiosk mode with Shell Launcher to display a web interface that can launch the Windows App
+    via the ms-avd protocol. The configuration uses a combination of Assigned Access policies, AppLocker rules, local 
+    group policy settings, provisioning packages, and registry edits to create a secure kiosk environment.
 
-    * Shell Launcher kiosk mode with Windows App as the dedicated application
-    * Shell Launcher kiosk mode with Windows App as the dedicated application and automatic logon
-    * Multi-app kiosk mode with restricted Start menu and taskbar access
-    * Multi-app kiosk mode with restricted Start menu and taskbar access with automatic logon
-
-    These options are controlled by the combination of the WindowsAppShell and AutoLogonKiosk switch parameters.
+    The solution provides:
+    * Automatic logon with the KioskUser0 account
+    * Microsoft Edge in single-app kiosk mode as the shell
+    * A configurable URL (default: local HTML file) that can launch Windows App connections
+    * Windows App automatic logoff and reset behaviors for enhanced security
+    * Locked-down user experience preventing access to unauthorized applications
     
-    When the WindowsAppShell switch parameter is not used, you can utilize the ShowSettings switch parameter to allow access to the Settings app.
-    
-    Additionally, you can choose to:
-
-    * Provision the latest Windows App directly from the Microsoft download site so that it is installed for every user.
-    * Configure automatic logoff behavior for the Windows App in automatic logon kiosk scenarios.
-    * When not configured as an automatic logon kiosk:
-        * Configure idle timeout behavior with automatic screen lock, user logoff, and system sleep escalation.
-        * Monitor for smart card removals and perform lock or logoff actions.
-        * Enable SharedPC mode for automatic profile cleanup.
+    This is a customized configuration tailored to specific deployment requirements and customer preferences.
 
 .DESCRIPTION 
-    This script completes a series of configuration tasks based on the parameters chosen. These tasks can include:
+    This script completes a series of configuration tasks to create a secure kiosk environment:
 
-    * Assigned Access configuration for shell launcher or multi-app kiosk modes
-    * Windows App provisioning from the Microsoft download site or via a local source file.
-    * Automatic logoff and app reset configuration for Windows App
-    * Multi-Local Group Policy configuration to limit interface elements and restrict access
-    * Provisioning packages to Hide Start Menu elements and optionally enable SharedPC mode for automatic profile cleanup
-    * Built-in application removal to reduce attack surface and speed logon.
-    * Start menu and taskbar customization for multi-app kiosk scenarios
-    * Smart card removal behavior configuration (lock or logoff)
-    * Registry modifications to enforce kiosk behavior and settings
+    * Shell Launcher configuration to replace Explorer with Microsoft Edge in kiosk mode
+    * Automatic logon with the KioskUser0 account created by Assigned Access
+    * Windows App provisioning from the Microsoft download site or via a local source file
+    * Windows App automatic logoff and reset configuration to protect credentials
+    * AppLocker policy to restrict unauthorized application execution
+    * Local Group Policy configuration to lock down the user interface
+    * Provisioning packages to disable Windows Spotlight, first logon animation, and advertising ID
+    * Built-in application removal to reduce attack surface and improve performance
+    * Power management and automatic maintenance configuration for shared device scenarios
+    * Keyboard filter to block common Windows key combinations
+    * Registry modifications to enforce security and kiosk behaviors
 
 .NOTES 
     Author: Shawn Meyer, Microsoft
     Creation Date: 02/15/2023
-    Last Modified: 12/1/2025
-    Version: 2025.12.01.1
+    Last Modified: 02/19/2026
+    Version: 2026.02.19.1
     
-    The script will automatically remove older configurations by using -Reinstall which will run 'Remove-KioskSettings.ps1' during the install process.
-
-.COMPONENT 
-    No PowerShell modules required.
-
-.LINK 
-    https://www.github.com/azure/WindowsAppKiosk
-
-.PARAMETER AutoLogonKiosk
-This switch parameter determines If autologon is enabled through the Assigned Access configuration. The Assigned Access feature will automatically
-create a new user - 'KioskUser0' - which will not have a password and be configured to automatically logon when Windows starts.
-
-.PARAMETER WindowsAppAutoLogoffConfig
-This string parameter determines the automatic logoff configuration for the Windows App when the AutoLogonKiosk switch parameter is used. The possible values are:
-- Disabled - Disables automatic sign-out and app data reset for the Windows App. (Not RECOMMENDED for Kiosk scenarios)
-- ResetAppOnCloseOnly - Sign all users out of Windows App and reset app data when the user closes the app.
-- ResetAppAfterConnection - Sign all users out of Windows App and reset app data when a successful connection to an Azure Virtual Desktop session host or Windows 365 Cloud PC is made.
-- ResetAppOnCloseOrIdle - Sign all users out of Windows App and reset app data when the operating system is idle for the specified time interval in minutes or the user closes the app.
-
-.PARAMETER WindowsAppAutoLogoffTimeInterval
-This integer value determines the interval at which Windows App checks the Windows OS for inactivity.
-For example, if set to 5, the app will poll the OS for inactivity every 5 minutes and the logout process will initiate if the OS reports 5 or more minutes of inactivity. 
-
-.PARAMETER WindowsAppShell
-This switch parameter determines whether the Windows Shell is replaced by the Windows App or remains the default 'explorer.exe'.
+    This is a custom version of the Windows App kiosk solution tailored to specific customer requirements. 
+    The configuration has been streamlined to focus on a particular deployment scenario: an auto-logon 
+    Edge kiosk that launches Windows App connections.
+    
+    The script can optionally remove legacy configurations and existing kiosk settings using the 
+    -RemoveLegacySettings and -RemoveExistingSettings parameters respectively.
 
 .PARAMETER InstallWindowsApp
-This switch parameter determines If the latest Remote Desktop client for Windows is automatically downloaded from the Internet and installed on the system prior to configuration.
+This switch parameter determines if the latest Windows App is automatically downloaded from the Internet and installed on the system prior to configuration. Supports both online (automatic download) and offline (local MSIX file) installation. When a local MSIX file is present in the Apps\WindowsApp directory, no internet connection is required and the local file will be used instead. For detailed offline installation instructions, see Apps\WindowsApp\README.md.
 
-.PARAMETER SharedPC
-This switch parameter determines If the computer is setup as a shared PC. The account management process is enabled and all user profiles are automatically deleted on logoff.
+.PARAMETER WindowsAppAutoLogoffConfig
+This string parameter determines the automatic logoff configuration for the Windows App. The possible values are:
+- Disabled - Disables automatic sign-out and app data reset for the Windows App. (Not recommended for kiosk scenarios)
+- ResetAppOnCloseOnly - Sign all users out of Windows App and reset app data when the user closes the app
+- ResetAppAfterConnection - Sign all users out of Windows App and reset app data when a successful connection is made to an Azure Virtual Desktop session host or Windows 365 Cloud PC
+- ResetAppOnCloseOrIdle - Sign all users out of Windows App and reset app data when the operating system is idle for the specified time interval in minutes or the user closes the app
 
-.PARAMETER ShowSettings
-This switch parameter determines If the Settings App appears on the start menu. The settings app and control panel are restricted to the applets/pages specified in the nonadmins-ShowSettings.txt file. If this value is not set,
-then the Settings app and Control Panel are not displayed or accessible.
+For kiosk security, it is strongly recommended to use 'ResetAppOnCloseOrIdle' to ensure credentials are protected during idle periods.
 
-.PARAMETER IdleLockTimeoutMinutes
-This integer value determines the number of minutes of idle time before the lock screen is displayed. This parameter is only valid when the AutoLogonKiosk switch parameter is not used. When used with other idle timeout parameters, this must be at least 15 minutes less than IdleLogoffTimeoutMinutes and IdleSleepTimeoutMinutes.
-
-.PARAMETER IdleLogoffTimeoutMinutes
+.PARAMETER WindowsAppAutoLogoffTimeInterval
+This integer parameter determines the interval in minutes at which Windows App checks the Windows OS for inactivity. For example, if set to 5, the app will poll the OS for inactivity every 5 minutes and the logout process will initiate if the OS reports 5 or more minutes of inactivity. This parameter is required when WindowsAppAutoLogoffConfig is set to 'ResetAppOnCloseOrIdle'. Default value is 15 minutes
 This integer value determines the number of minutes of idle time before the user is automatically logged off. This parameter is only valid when the AutoLogonKiosk switch parameter is not used. When used with other idle timeout parameters, this must be at least 15 minutes greater than IdleLockTimeoutMinutes and at least 15 minutes less than IdleSleepTimeoutMinutes.
 
 .PARAMETER SmartCardRemovalAction   
@@ -103,10 +78,16 @@ This switch parameter determines if power management policies are configured via
 This integer parameter specifies the number of minutes of user inactivity before the system automatically goes to sleep. This parameter is required when SetPowerPolicies is used and works in conjunction with it to manage power consumption in shared PC environments. When used with other idle timeout parameters, this must be at least 15 minutes greater than both IdleLockTimeoutMinutes and IdleLogoffTimeoutMinutes to ensure proper escalation sequence (lock → logoff → sleep).
 
 .PARAMETER KioskUrl
-This string parameter specifies the URL that Microsoft Edge will open in kiosk mode. The default value is 'file:///c:/kiosksettings/Index.html' which uses a local HTML file. When set to a different URL (e.g., a web URL), the local HTML file will not be created and Edge will be configured to open the specified URL directly.
+This string parameter specifies the URL that Microsoft Edge will open in kiosk mode. The default value is 'file:///c:/kiosksettings/Index.html' which uses a local HTML file containing buttons to launch Windows App connections. When set to a different URL (e.g., a custom web portal), the local HTML file will not be created and Edge will be configured to open the specified URL directly. Your custom URL should include ms-avd:// protocol links to launch Windows App.
 
-.PARAMETER Reinstall
-This switch parameter allows the script to be re-run on a system that has already been configured. It triggers the removal of existing kiosk settings before applying the new configuration.
+.PARAMETER AllowedUrls
+This string array parameter specifies which URLs Microsoft Edge is allowed to navigate to in kiosk mode. The default includes file:// for local content and protocol handlers (ms-avd://, ms-cloudpc://, evo://, workspaces://). All other navigation is blocked. Customize this list to include your specific allowed domains. Examples: 'https://portal.tailspintoys.com', 'tailspintoys.com', 'http://intranet.local'. **Note:** The protocols ms-avd://* and ms-cloudpc://* are always automatically included to ensure Windows App functionality. The KioskUrl is also automatically included unless already covered by an existing pattern.
+
+.PARAMETER RemoveLegacySettings
+This switch parameter removes legacy kiosk configurations from previous versions or other kiosk implementations before applying the new configuration. This ensures a clean slate by running the Remove-LegacyKioskSettings.ps1 script.
+
+.PARAMETER RemoveExistingSettings
+This switch parameter removes existing Windows App kiosk settings before applying the new configuration. This allows the script to be re-run on a system that has already been configured by running the Remove-WindowsAppKioskSettings.ps1 script.
 
 .PARAMETER Version
 This version parameter allows tracking of the installed version using configuration management software such as Microsoft Endpoint Manager or Microsoft Endpoint Configuration Manager by querying the value of the registry value: HKLM\Software\Kiosk\version.
@@ -118,7 +99,7 @@ param (
 
     [ValidateSet('Disabled', 'ResetAppOnCloseOnly', 'ResetAppAfterConnection', 'ResetAppOnCloseOrIdle')]
     [string]$WindowsAppAutoLogoffConfig,
-
+    
     [int]$WindowsAppAutoLogoffTimeInterval = 15,
 
     [Parameter()]
@@ -153,7 +134,14 @@ param (
     [string]$KioskUrl = 'file:///c:/kiosksettings/Index.html',
 
     [Parameter()]
-    [switch]$Reinstall,
+    [ValidateNotNullOrEmpty()]
+    [string[]]$AllowedUrls = @('file://*', 'ms-avd://*', 'ms-cloudpc://*', 'workspaces://*', 'evo://*'),
+
+    [Parameter()]
+    [switch]$RemoveLegacySettings,
+
+    [Parameter()]
+    [switch]$RemoveExistingSettings,
 
     [version]$Version = '1.0.0'
 )
@@ -175,7 +163,7 @@ If ($ENV:PROCESSOR_ARCHITEW6432 -eq "AMD64") {
             switch ($PSBoundParameters[$k].GetType().Name) {
                 "SwitchParameter" { If ($PSBoundParameters[$k].IsPresent) { $scriptArguments += "-$k " } }
                 "String" { If ($PSBoundParameters[$k] -match '_') { $scriptArguments += "-$k `"$($PSBoundParameters[$k].Replace('_',' '))`" " } Else { $scriptArguments += "-$k `"$($PSBoundParameters[$k])`" " } }
-                "String[]" { $ScriptArguments += "-$k `"$($PSBoundParameters[$k] -join '`",`"')`" " }
+                "String[]" { $ScriptArguments += "-$k @('$($PSBoundParameters[$k] -join "','")') " }
                 "Int32" { $scriptArguments += "-$k $($PSBoundParameters[$k]) " }
                 "Boolean" { $scriptArguments += "-$k `$$($PSBoundParameters[$k]) " }
                 "Version" { $scriptArguments += "-$k `"$($PSBoundParameters[$k])`" " }
@@ -192,6 +180,146 @@ If ($ENV:PROCESSOR_ARCHITEW6432 -eq "AMD64") {
         Throw "Failed to start 64-bit PowerShell"
     }
     Exit $RunScript.ExitCode
+}
+
+# Ensure critical protocol URLs are always included for Windows App functionality
+$RequiredProtocols = @('ms-avd://*', 'ms-cloudpc://*')
+foreach ($protocol in $RequiredProtocols) {
+    if ($AllowedUrls -notcontains $protocol) {
+        Write-Verbose "Adding required protocol '$protocol' to AllowedUrls"
+        $AllowedUrls += $protocol
+    }
+} 
+
+# Ensure the KioskUrl is included in AllowedUrls (if not already covered by a filter pattern)
+$KioskUrlCovered = $false
+
+# Check if KioskUrl is already explicitly in the list
+if ($AllowedUrls -contains $KioskUrl) {
+    $KioskUrlCovered = $true
+    Write-Verbose "KioskUrl '$KioskUrl' is already explicitly in AllowedUrls"
+}
+
+# Check if KioskUrl is covered by any filter patterns using Edge URL filter format rules
+# Reference: https://learn.microsoft.com/en-us/DeployEdge/edge-learnmmore-url-list-filter%20format
+if (-not $KioskUrlCovered) {
+    foreach ($filterPattern in $AllowedUrls) {
+        # Skip if already matched
+        if ($KioskUrlCovered) { break }
+        
+        try {
+            # Rule 1: Exact match
+            if ($KioskUrl -eq $filterPattern) {
+                $KioskUrlCovered = $true
+                Write-Verbose "KioskUrl '$KioskUrl' exactly matches filter '$filterPattern'"
+                break
+            }
+            
+            # Rule 2: Wildcard 'file://*', 'ms-avd://*', etc. - matches any URL with that scheme
+            if ($filterPattern -match '^([a-z0-9\-]+)://\*$') {
+                $scheme = $matches[1]
+                if ($KioskUrl -like "${scheme}://*") {
+                    $KioskUrlCovered = $true
+                    Write-Verbose "KioskUrl '$KioskUrl' is covered by scheme wildcard '$filterPattern'"
+                    break
+                }
+            }
+            
+            # Rule 3: Simple hostname (e.g., 'contoso.com') - matches the domain and ALL subdomains
+            # Per Edge docs: contoso.com matches www.contoso.com, internal.contoso.com, etc.
+            elseif ($filterPattern -notmatch '://' -and $filterPattern -notmatch '^\.') {
+                try {
+                    $kioskUri = [System.Uri]$KioskUrl
+                    $filterDomain = $filterPattern.TrimEnd('/*')
+                    # Matches exact domain OR any subdomain
+                    if ($kioskUri.Host -eq $filterDomain -or $kioskUri.Host -like "*.$filterDomain") {
+                        $KioskUrlCovered = $true
+                        Write-Verbose "KioskUrl '$KioskUrl' is covered by hostname filter '$filterPattern' (includes subdomains)"
+                        break
+                    }
+                } catch { }
+            }
+            
+            # Rule 4: Hostname with leading dot (e.g., '.contoso.com') - matches ONLY subdomains, not root
+            elseif ($filterPattern -match '^\.' -and $filterPattern -notmatch '://') {
+                try {
+                    $kioskUri = [System.Uri]$KioskUrl
+                    $filterDomain = $filterPattern.Substring(1).TrimEnd('/*')
+                    # Matches only subdomains, not the root domain
+                    if ($kioskUri.Host -like "*.$filterDomain") {
+                        $KioskUrlCovered = $true
+                        Write-Verbose "KioskUrl '$KioskUrl' is covered by subdomain-only filter '$filterPattern'"
+                        break
+                    }
+                } catch { }
+            }
+            
+            # Rule 5: Full URL with scheme (e.g., 'https://contoso.com') - matches that scheme + domain + subdomains
+            elseif ($filterPattern -match '^([a-z0-9\-]+)://([^/\*]+)(.*)$') {
+                try {
+                    $kioskUri = [System.Uri]$KioskUrl
+                    $filterScheme = $matches[1]
+                    $filterHost = $matches[2]
+                    $filterPath = $matches[3]
+                    
+                    # Scheme must match
+                    if ($kioskUri.Scheme -ne $filterScheme) { continue }
+                    
+                    # Host matching: contoso.com matches contoso.com and *.contoso.com
+                    $hostMatches = $kioskUri.Host -eq $filterHost -or $kioskUri.Host -like "*.$filterHost"
+                    if (-not $hostMatches) { continue }
+                    
+                    # Path matching
+                    if ($filterPath) {
+                        if ($filterPath -eq '/*' -or $filterPath -eq '*') {
+                            # Wildcard path matches anything
+                            $KioskUrlCovered = $true
+                        } elseif ($filterPath.Contains('*')) {
+                            # Wildcard in path
+                            $pathPattern = '^' + [regex]::Escape($filterPath).Replace('\*', '.*') + '$'
+                            if ($kioskUri.PathAndQuery -match $pathPattern) {
+                                $KioskUrlCovered = $true
+                            }
+                        } else {
+                            # Specific path
+                            if ($kioskUri.PathAndQuery -like "$filterPath*") {
+                                $KioskUrlCovered = $true
+                            }
+                        }
+                    } else {
+                        # No path specified, matches any path
+                        $KioskUrlCovered = $true
+                    }
+                    
+                    if ($KioskUrlCovered) {
+                        Write-Verbose "KioskUrl '$KioskUrl' is covered by full URL filter '$filterPattern'"
+                        break
+                    }
+                } catch { }
+            }
+            
+            # Rule 6: Wildcard patterns with * in host (e.g., 'https://*.contoso.com')
+            elseif ($filterPattern.Contains('*')) {
+                $pattern = '^' + [regex]::Escape($filterPattern).Replace('\*', '.*') + '$'
+                if ($KioskUrl -match $pattern) {
+                    $KioskUrlCovered = $true
+                    Write-Verbose "KioskUrl '$KioskUrl' is covered by wildcard pattern '$filterPattern'"
+                    break
+                }
+            }
+        }
+        catch {
+            # If any parsing fails, skip this pattern
+            Write-Verbose "Failed to match KioskUrl against pattern '$filterPattern': $_"
+            continue
+        }
+    }
+}
+
+# If not covered, add it explicitly
+if (-not $KioskUrlCovered) {
+    Write-Verbose "Adding KioskUrl '$KioskUrl' to AllowedUrls"
+    $AllowedUrls += $KioskUrl
 }
 
 $Script:FullName = $MyInvocation.MyCommand.Path
@@ -283,10 +411,31 @@ Copy-Item -Path "$DirTools\lgpo.exe" -Destination "$env:SystemRoot\System32" -Fo
 #endregion Initialization
 
 #region Remove Previous Versions
-If ($Reinstall) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 2 -Message "Reinstall switch detected. Existing kiosk settings will be removed before applying new configuration."
-    & "$Script:Dir\Remove-KioskSettings.ps1" -Reinstall
+
+If ($RemoveLegacySettings) {
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 2 -Message "RemoveLegacySettings switch detected. Legacy kiosk configurations will be removed before applying new configuration."
+    $LegacyRemovalScript = Join-Path -Path $Script:Dir -ChildPath "Remove-LegacyKioskSettings.ps1"
+    If (Test-Path -Path $LegacyRemovalScript) {
+        & $LegacyRemovalScript
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 3 -Message "Legacy kiosk settings removal completed."
+    }
+    Else {
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 3 -Message "Remove-LegacyKioskSettings.ps1 not found at expected location."
+    }
 }
+
+If ($RemoveExistingSettings) {
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 4 -Message "RemoveExistingSettings switch detected. Existing Windows App kiosk settings will be removed before applying new configuration."
+    $RemovalScript = Join-Path -Path $Script:Dir -ChildPath "Remove-WindowsAppKioskSettings.ps1"
+    If (Test-Path -Path $RemovalScript) {
+        & $RemovalScript -Reinstall
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 5 -Message "Windows App kiosk settings removal completed."
+    }
+    Else {
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 5 -Message "Remove-WindowsAppKioskSettings.ps1 not found at expected location."
+    }
+}
+
 #endregion Previous Version Removal
 
 #region Remove Apps
@@ -418,8 +567,47 @@ ForEach ($Package in $ProvisioningPackages) {
 $null = cmd /c lgpo.exe /t "$DirGPO\AllowedOrigins.txt" '2>&1'
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Configured ms-avd url protocol to launch windows app automatically via Local Group Policy Machine Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
 
-$null = cmd /c lgpo.exe /t "$DirGPO\Edge.txt" '2>&1'
+# Generate Edge URLAllowlist configuration dynamically based on parameter
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 79 -Message "Generating Edge URLAllowlist for: $($AllowedUrls -join ', ')"
+
+# Start with base Edge settings from static file
+$EdgeContent = Get-Content -Path "$DirGPO\Edge.txt" -Raw
+
+# Append URLBlocklist configuration
+$EdgeContent += "`n`nUser:Non-Administrators`n"
+$EdgeContent += "SOFTWARE\Policies\Microsoft\Edge\URLBlocklist`n"
+$EdgeContent += "*`n"
+$EdgeContent += "DELETEALLVALUES`n"
+$EdgeContent += "`n"
+$EdgeContent += "User:Non-Administrators`n"
+$EdgeContent += "SOFTWARE\Policies\Microsoft\Edge\URLBlocklist`n"
+$EdgeContent += "1`n"
+$EdgeContent += "SZ:*`n"
+
+# Append URLAllowlist configuration
+$EdgeContent += "`n"
+$EdgeContent += "User:Non-Administrators`n"
+$EdgeContent += "SOFTWARE\Policies\Microsoft\Edge\URLAllowlist`n"
+$EdgeContent += "*`n"
+$EdgeContent += "DELETEALLVALUES`n"
+
+# Add each allowed URL to the allowlist
+$urlIndex = 1
+foreach ($url in $AllowedUrls) {
+    $EdgeContent += "`n"
+    $EdgeContent += "User:Non-Administrators`n"
+    $EdgeContent += "SOFTWARE\Policies\Microsoft\Edge\URLAllowlist`n"
+    $EdgeContent += "$urlIndex`n"
+    $EdgeContent += "SZ:$url`n"
+    $urlIndex++
+}
+
+$EdgeFile = Join-Path -Path "$env:SystemRoot\SystemTemp" -ChildPath 'Edge.txt'
+$EdgeContent | Out-File -FilePath $EdgeFile -Encoding ascii -Force
+
+$null = cmd /c lgpo.exe /t "$EdgeFile" '2>&1'
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Configuring Microsoft Edge policies via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
+Remove-Item -Path $EdgeFile -Force -ErrorAction SilentlyContinue
 
 $null = cmd /c lgpo.exe /t "$DirGPO\Ctrl+Alt+Del-HideTaskManager.txt" '2>&1'
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Disabled Task Manager via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"

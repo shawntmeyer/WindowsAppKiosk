@@ -1,0 +1,9 @@
+User:Non-Administrators
+SOFTWARE\Policies\Microsoft\Edge
+AddressBarEditingEnabled
+DWORD:0
+
+User:Non-Administrators
+SOFTWARE\Policies\Microsoft\Edge
+HideFirstRunExperience
+DWORD:1

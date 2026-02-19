@@ -1,3 +1,41 @@
+<#
+.SYNOPSIS
+    Removes legacy kiosk configurations from previous versions or other kiosk implementations.
+
+.DESCRIPTION
+    This script safely removes legacy Windows kiosk configurations that may conflict with the current 
+    Edge-based Windows App kiosk solution. It performs the following cleanup tasks:
+    
+    * Removes user/group-specific Local Group Policy Objects (GPOs)
+    * Forces Group Policy updates to apply the removal
+    * Logs all operations to the Windows-App-Kiosk event log
+    
+    This script is automatically called when using the -RemoveLegacySettings parameter with the main 
+    Set-WindowsAppFromEdgeKioskSettings.ps1 script.
+
+.PARAMETER EventLog
+    The name of the Windows Event Log where operations will be logged. Default is 'Windows-App-Kiosk'.
+
+.PARAMETER EventSource
+    The event source name used for logging. Default is 'LegacyRemovalScript'.
+
+.NOTES
+    Author: Shawn Meyer, Microsoft
+    Last Modified: 02/19/2026
+    Version: 1.0.0
+    
+    This script should be run with SYSTEM privileges for proper operation.
+
+.EXAMPLE
+    .\Remove-LegacyKioskSettings.ps1
+    
+    Removes legacy kiosk settings using default event log settings.
+
+.EXAMPLE
+    .\Remove-LegacyKioskSettings.ps1 -EventLog "MyCustomLog" -EventSource "MySource"
+    
+    Removes legacy kiosk settings and logs to a custom event log.
+#>
 [CmdletBinding()]
 param (
     [string]$EventLog = 'Windows-App-Kiosk',

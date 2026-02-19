@@ -1,3 +1,56 @@
+<#
+.SYNOPSIS
+    Removes Windows App kiosk settings configured by Set-WindowsAppFromEdgeKioskSettings.ps1.
+
+.DESCRIPTION
+    This script completely removes the Edge-based Windows App kiosk configuration and restores the system 
+    to its pre-kiosk state. It performs the following removal operations:
+    
+    * Removes Shell Launcher and Assigned Access configurations via WMI Bridge
+    * Removes Non-Administrators Local Group Policy Objects
+    * Uninstalls provisioning packages (Windows Spotlight, First Logon Animation, Advertising ID)
+    * Restores original AppLocker policy
+    * Resets registry values to their original state
+    * Disables and removes Keyboard Filter feature
+    * Removes scheduled tasks created during kiosk configuration
+    * Deletes the KioskSettings directory and all kiosk artifacts
+    * Forces Group Policy updates
+    
+    All operations are logged to the Windows-App-Kiosk event log for auditing and troubleshooting.
+
+.PARAMETER EventLog
+    The name of the Windows Event Log where operations will be logged. Default is 'Windows-App-Kiosk'.
+
+.PARAMETER EventSource
+    The event source name used for logging. Default is 'RemovalScript'.
+
+.PARAMETER Reinstall
+    When specified, indicates this removal is part of a reinstall operation. This suppresses certain
+    warnings and adjusts logging behavior.
+
+.NOTES
+    Author: Shawn Meyer, Microsoft
+    Last Modified: 02/19/2026
+    Version: 1.0.0
+    
+    This script should be run with SYSTEM privileges for proper operation.
+    A system restart is required after removal to complete all cleanup operations.
+
+.EXAMPLE
+    .\Remove-WindowsAppKioskSettings.ps1
+    
+    Removes all Windows App kiosk settings and restores the system to its original state.
+
+.EXAMPLE
+    .\Remove-WindowsAppKioskSettings.ps1 -Reinstall
+    
+    Removes existing kiosk settings as part of a reinstallation process.
+
+.EXAMPLE
+    .\Remove-WindowsAppKioskSettings.ps1 -EventLog "MyCustomLog" -EventSource "MySource"
+    
+    Removes kiosk settings and logs operations to a custom event log.
+#>
 [CmdletBinding()]
 param (
     [string]$EventLog = 'Windows-App-Kiosk',
