@@ -32,3 +32,8 @@ User:Non-Administrators
 SOFTWARE\Policies\Microsoft\Edge\URLAllowlist
 2
 SZ:https://uncl.ncsc.mil
+
+User:Non-Administrators
+SOFTWARE\Policies\Microsoft\Edge\URLAllowlist
+3
+SZ:file://*
