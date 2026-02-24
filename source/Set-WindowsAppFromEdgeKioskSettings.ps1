@@ -182,146 +182,6 @@ If ($ENV:PROCESSOR_ARCHITEW6432 -eq "AMD64") {
     Exit $RunScript.ExitCode
 }
 
-# Ensure critical protocol URLs are always included for Windows App functionality
-$RequiredProtocols = @('ms-avd://*', 'ms-cloudpc://*')
-foreach ($protocol in $RequiredProtocols) {
-    if ($AllowedUrls -notcontains $protocol) {
-        Write-Verbose "Adding required protocol '$protocol' to AllowedUrls"
-        $AllowedUrls += $protocol
-    }
-} 
-
-# Ensure the KioskUrl is included in AllowedUrls (if not already covered by a filter pattern)
-$KioskUrlCovered = $false
-
-# Check if KioskUrl is already explicitly in the list
-if ($AllowedUrls -contains $KioskUrl) {
-    $KioskUrlCovered = $true
-    Write-Verbose "KioskUrl '$KioskUrl' is already explicitly in AllowedUrls"
-}
-
-# Check if KioskUrl is covered by any filter patterns using Edge URL filter format rules
-# Reference: https://learn.microsoft.com/en-us/DeployEdge/edge-learnmmore-url-list-filter%20format
-if (-not $KioskUrlCovered) {
-    foreach ($filterPattern in $AllowedUrls) {
-        # Skip if already matched
-        if ($KioskUrlCovered) { break }
-        
-        try {
-            # Rule 1: Exact match
-            if ($KioskUrl -eq $filterPattern) {
-                $KioskUrlCovered = $true
-                Write-Verbose "KioskUrl '$KioskUrl' exactly matches filter '$filterPattern'"
-                break
-            }
-            
-            # Rule 2: Wildcard 'file://*', 'ms-avd://*', etc. - matches any URL with that scheme
-            if ($filterPattern -match '^([a-z0-9\-]+)://\*$') {
-                $scheme = $matches[1]
-                if ($KioskUrl -like "${scheme}://*") {
-                    $KioskUrlCovered = $true
-                    Write-Verbose "KioskUrl '$KioskUrl' is covered by scheme wildcard '$filterPattern'"
-                    break
-                }
-            }
-            
-            # Rule 3: Simple hostname (e.g., 'contoso.com') - matches the domain and ALL subdomains
-            # Per Edge docs: contoso.com matches www.contoso.com, internal.contoso.com, etc.
-            elseif ($filterPattern -notmatch '://' -and $filterPattern -notmatch '^\.') {
-                try {
-                    $kioskUri = [System.Uri]$KioskUrl
-                    $filterDomain = $filterPattern.TrimEnd('/*')
-                    # Matches exact domain OR any subdomain
-                    if ($kioskUri.Host -eq $filterDomain -or $kioskUri.Host -like "*.$filterDomain") {
-                        $KioskUrlCovered = $true
-                        Write-Verbose "KioskUrl '$KioskUrl' is covered by hostname filter '$filterPattern' (includes subdomains)"
-                        break
-                    }
-                } catch { }
-            }
-            
-            # Rule 4: Hostname with leading dot (e.g., '.contoso.com') - matches ONLY subdomains, not root
-            elseif ($filterPattern -match '^\.' -and $filterPattern -notmatch '://') {
-                try {
-                    $kioskUri = [System.Uri]$KioskUrl
-                    $filterDomain = $filterPattern.Substring(1).TrimEnd('/*')
-                    # Matches only subdomains, not the root domain
-                    if ($kioskUri.Host -like "*.$filterDomain") {
-                        $KioskUrlCovered = $true
-                        Write-Verbose "KioskUrl '$KioskUrl' is covered by subdomain-only filter '$filterPattern'"
-                        break
-                    }
-                } catch { }
-            }
-            
-            # Rule 5: Full URL with scheme (e.g., 'https://contoso.com') - matches that scheme + domain + subdomains
-            elseif ($filterPattern -match '^([a-z0-9\-]+)://([^/\*]+)(.*)$') {
-                try {
-                    $kioskUri = [System.Uri]$KioskUrl
-                    $filterScheme = $matches[1]
-                    $filterHost = $matches[2]
-                    $filterPath = $matches[3]
-                    
-                    # Scheme must match
-                    if ($kioskUri.Scheme -ne $filterScheme) { continue }
-                    
-                    # Host matching: contoso.com matches contoso.com and *.contoso.com
-                    $hostMatches = $kioskUri.Host -eq $filterHost -or $kioskUri.Host -like "*.$filterHost"
-                    if (-not $hostMatches) { continue }
-                    
-                    # Path matching
-                    if ($filterPath) {
-                        if ($filterPath -eq '/*' -or $filterPath -eq '*') {
-                            # Wildcard path matches anything
-                            $KioskUrlCovered = $true
-                        } elseif ($filterPath.Contains('*')) {
-                            # Wildcard in path
-                            $pathPattern = '^' + [regex]::Escape($filterPath).Replace('\*', '.*') + '$'
-                            if ($kioskUri.PathAndQuery -match $pathPattern) {
-                                $KioskUrlCovered = $true
-                            }
-                        } else {
-                            # Specific path
-                            if ($kioskUri.PathAndQuery -like "$filterPath*") {
-                                $KioskUrlCovered = $true
-                            }
-                        }
-                    } else {
-                        # No path specified, matches any path
-                        $KioskUrlCovered = $true
-                    }
-                    
-                    if ($KioskUrlCovered) {
-                        Write-Verbose "KioskUrl '$KioskUrl' is covered by full URL filter '$filterPattern'"
-                        break
-                    }
-                } catch { }
-            }
-            
-            # Rule 6: Wildcard patterns with * in host (e.g., 'https://*.contoso.com')
-            elseif ($filterPattern.Contains('*')) {
-                $pattern = '^' + [regex]::Escape($filterPattern).Replace('\*', '.*') + '$'
-                if ($KioskUrl -match $pattern) {
-                    $KioskUrlCovered = $true
-                    Write-Verbose "KioskUrl '$KioskUrl' is covered by wildcard pattern '$filterPattern'"
-                    break
-                }
-            }
-        }
-        catch {
-            # If any parsing fails, skip this pattern
-            Write-Verbose "Failed to match KioskUrl against pattern '$filterPattern': $_"
-            continue
-        }
-    }
-}
-
-# If not covered, add it explicitly
-if (-not $KioskUrlCovered) {
-    Write-Verbose "Adding KioskUrl '$KioskUrl' to AllowedUrls"
-    $AllowedUrls += $KioskUrl
-}
-
 $Script:FullName = $MyInvocation.MyCommand.Path
 $Script:Dir = Split-Path $Script:FullName
 # Windows Event Log (.evtx)
@@ -344,17 +204,7 @@ $DirKiosk = Join-Path -Path $env:SystemDrive -ChildPath "KioskSettings"
 $DirTools = Join-Path -Path $Script:Dir -ChildPath "Tools"
 $DirFunctions = Join-Path -Path $Script:Dir -ChildPath "Scripts\Functions"
 $DirSchedTasksScripts = Join-Path -Path $Script:Dir -ChildPath "Scripts\ScheduledTasks"
-
-#region Parameter Conversions
-
-# Convert MaintenanceRandomDelay integer to PT4H format
-$MaintenanceRandomDelayPT = "PT$($MaintenanceRandomDelay)H"
-
-# Convert MaintenanceActivationTime to ISO 8601 format with date 2000-01-01T
-$MaintenanceActivationTimeISO = "2000-01-01T$MaintenanceActivationTime"
-
-#endregion Parameter Conversions
-    
+  
 #region Load Functions
 
 If (Test-Path -Path $DirFunctions) {
@@ -410,29 +260,77 @@ Copy-Item -Path "$DirTools\lgpo.exe" -Destination "$env:SystemRoot\System32" -Fo
 
 #endregion Initialization
 
+#region Parameter Conversions
+If ($ConfigureAutomaticMaintenance) {
+    # Convert MaintenanceRandomDelay integer to PT4H format
+    $MaintenanceRandomDelayPT = "PT$($MaintenanceRandomDelay)H"
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 4 -Message "Converted MaintenanceRandomDelay of $MaintenanceRandomDelay hours to ISO 8601 duration format: $MaintenanceRandomDelayPT"
+    # Convert MaintenanceActivationTime to ISO 8601 format with date 2000-01-01T
+    $MaintenanceActivationTimeISO = "2000-01-01T$MaintenanceActivationTime"
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 5 -Message "Converted MaintenanceActivationTime of $MaintenanceActivationTime to ISO 8601 format: $MaintenanceActivationTimeISO"
+}
+#endregion Parameter Conversions
+
+#region Validate and Update AllowedUrls
+
+# Ensure critical protocol URLs are always included for Windows App functionality
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 2 -Message "Validating AllowedUrls parameter to ensure required protocol handlers for Windows App functionality are included."
+$RequiredProtocols = @('ms-avd://*', 'ms-cloudpc://*')
+foreach ($protocol in $RequiredProtocols) {
+    if ($AllowedUrls -notcontains $protocol) {
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 3 -Message "Adding required protocol '$protocol' to AllowedUrls"
+        $AllowedUrls += $protocol
+    }
+} 
+# Ensure the KioskUrl is included in AllowedUrls (if not already covered by a filter pattern)
+
+$KioskUrlCovered = $false
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information 73 -Message "Checking if KioskUrl '$KioskUrl' is already covered by existing AllowedUrls patterns or explicitly included in the list."
+# Check if KioskUrl is already explicitly in the list
+if ($AllowedUrls -contains $KioskUrl) {
+    $KioskUrlCovered = $true
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information 74 -Message "KioskUrl '$KioskUrl' is already explicitly in AllowedUrls"
+}
+
+# Check if KioskUrl is covered by any filter patterns using Edge URL filter format rules
+# Reference: https://learn.microsoft.com/en-us/DeployEdge/edge-learnmmore-url-list-filter%20format
+if (-not $KioskUrlCovered) {
+    $KioskUrlCovered = Test-UrlCoveredByFilter -Url $KioskUrl -AllowedUrls $AllowedUrls
+}
+
+# If not covered, add it explicitly
+if (-not $KioskUrlCovered) {
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information 74 -Message "KioskUrl '$KioskUrl' is not covered by existing AllowedUrls patterns. Adding it explicitly to the list."
+    $AllowedUrls += $KioskUrl
+} Else {
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information 74 -Message "KioskUrl '$KioskUrl' is already covered by existing AllowedUrls patterns"
+}
+
+#endregion Validate and Update AllowedUrls
+
 #region Remove Previous Versions
 
 If ($RemoveLegacySettings) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 2 -Message "RemoveLegacySettings switch detected. Legacy kiosk configurations will be removed before applying new configuration."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 10 -Message "RemoveLegacySettings switch detected. Legacy kiosk configurations will be removed before applying new configuration."
     $LegacyRemovalScript = Join-Path -Path $Script:Dir -ChildPath "Remove-LegacyKioskSettings.ps1"
     If (Test-Path -Path $LegacyRemovalScript) {
         & $LegacyRemovalScript
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 3 -Message "Legacy kiosk settings removal completed."
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 11 -Message "Legacy kiosk settings removal completed."
     }
     Else {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 3 -Message "Remove-LegacyKioskSettings.ps1 not found at expected location."
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 12 -Message "Remove-LegacyKioskSettings.ps1 not found at expected location."
     }
 }
 
 If ($RemoveExistingSettings) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 4 -Message "RemoveExistingSettings switch detected. Existing Windows App kiosk settings will be removed before applying new configuration."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 13 -Message "RemoveExistingSettings switch detected. Existing Windows App kiosk settings will be removed before applying new configuration."
     $RemovalScript = Join-Path -Path $Script:Dir -ChildPath "Remove-WindowsAppKioskSettings.ps1"
     If (Test-Path -Path $RemovalScript) {
         & $RemovalScript -Reinstall
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 5 -Message "Windows App kiosk settings removal completed."
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 14 -Message "Windows App kiosk settings removal completed."
     }
     Else {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 5 -Message "Remove-WindowsAppKioskSettings.ps1 not found at expected location."
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 15 -Message "Remove-WindowsAppKioskSettings.ps1 not found at expected location."
     }
 }
 
@@ -442,17 +340,17 @@ If ($RemoveExistingSettings) {
 
 # Remove Built-in Windows 11 Apps on non LTSC builds of Windows
 If (-not $LTSC) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 25 -Message "Starting Remove Apps Script."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 20 -Message "Starting Remove Apps Script."
     Remove-BuiltInApps
 }
 # Remove OneDrive
 If (Test-Path -Path "$env:SystemRoot\Syswow64\onedrivesetup.exe") {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 26 -Message "Removing Per-User installation of OneDrive."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 21 -Message "Removing Per-User installation of OneDrive."
     Start-Process -FilePath "$env:SystemRoot\Syswow64\onedrivesetup.exe" -ArgumentList "/uninstall" -Wait -ErrorAction SilentlyContinue
     $OneDrivePresent = $true
 }
 ElseIf (Test-Path -Path "$env:ProgramFiles\Microsoft OneDrive") {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 26 -Message "Removing Per-Machine Installation of OneDrive."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 22 -Message "Removing Per-Machine Installation of OneDrive."
     $OneDriveSetup = Get-ChildItem -Path "$env:ProgramFiles\Microsoft OneDrive" -Filter 'onedrivesetup.exe' -Recurse
     If ($OneDriveSetup) {
         Start-Process -FilePath $OneDriveSetup[0].FullName -ArgumentList "/uninstall" -Wait -ErrorAction SilentlyContinue
@@ -465,7 +363,7 @@ ElseIf (Test-Path -Path "$env:ProgramFiles\Microsoft OneDrive") {
 #region Install Windows App
 
 If ($InstallWindowsApp) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 31 -Message "Running Script to install or update the Windows App."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 30 -Message "Running Script to install or update the Windows App."
     & "$DirApps\WindowsApp\Deploy-WindowsApp.ps1"
 }
 
@@ -499,7 +397,7 @@ If ($KioskUrl -eq 'file:///c:/kiosksettings/Index.html') {
     Copy-Item -Path (Join-Path -Path $DirShellLauncherSettings -childPath 'windowsapp.html') -Destination "$DirKiosk\Index.html" -Force
 }
 Else {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 42 -Message "Using custom URL '$KioskUrl' for kiosk mode. Local HTML file will not be created."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 43 -Message "Using custom URL '$KioskUrl' for kiosk mode. Local HTML file will not be created."
 }
 
 #region Assigned Access Configuration
@@ -513,7 +411,7 @@ $XmlFile = Join-Path -Path $DirKiosk -ChildPath "AssignedAccessShellLauncher.xml
 Copy-Item -Path $ConfigFile -Destination $XmlFile -Force
 
 # Replace the placeholder with the actual Kiosk URL
-Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 51 -Message "Configuring Shell Launcher with URL: $KioskUrl"
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 52 -Message "Configuring Shell Launcher with URL: $KioskUrl"
 $XmlContent = Get-Content -Path $XmlFile -Raw
 $XmlContent = $XmlContent -replace '\{\{KIOSK_URL\}\}', $KioskUrl
 $XmlContent | Set-Content -Path $XmlFile -Force
@@ -521,10 +419,10 @@ $XmlContent | Set-Content -Path $XmlFile -Force
 Set-AssignedAccessShellLauncher -FilePath $XmlFile
 If (Get-AssignedAccessShellLauncher) {
     [xml]$Xml = Get-Content -Path $XmlFile
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 52 -Message "Shell Launcher configuration successfully applied.`n-----BEGIN CONFIGURATION-----`n$Xml`n-----END CONFIGURATION-----"
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 53 -Message "Shell Launcher configuration successfully applied.`n-----BEGIN CONFIGURATION-----`n$Xml`n-----END CONFIGURATION-----"
 }
 Else {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Error -EventId 53 -Message "Shell Launcher configuration failed. Computer should be restarted first."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Error -EventId 54 -Message "Shell Launcher configuration failed. Computer should be restarted first."
     Exit 1618
 }
 
@@ -556,7 +454,7 @@ ForEach ($Package in $ProvisioningPackages) {
     $SourcePath = Join-Path -Path $DirProvisioningPackages -ChildPath $Package.Name
     $DestPath = Join-Path -Path $DirKiosk -ChildPath "ProvisioningPackages\$($Package.Name)"
     Copy-Item -Path $SourcePath -Destination $DestPath -Force | Out-Null
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventID 65 -Message "Installing $($Package.Name). Purpose: $($Package.Purpose)"
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventID 60 -Message "Installing $($Package.Name). Purpose: $($Package.Purpose)"
     Install-ProvisioningPackage -PackagePath $DestPath -ForceInstall -QuietInstall
 }
 
@@ -565,40 +463,45 @@ ForEach ($Package in $ProvisioningPackages) {
 #region Local GPO Settings
 
 $null = cmd /c lgpo.exe /t "$DirGPO\AllowedOrigins.txt" '2>&1'
-Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Configured ms-avd url protocol to launch windows app automatically via Local Group Policy Machine Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 70 -Message "Configured ms-avd or ms-cloudpc url protocol to launch windows app automatically via Local Group Policy Machine Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
 
 # Generate Edge URLAllowlist configuration dynamically based on parameter
-Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 79 -Message "Generating Edge URLAllowlist for: $($AllowedUrls -join ', ')"
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 71 -Message "Generating Edge URLAllowlist for: $($AllowedUrls -join ', ')"
 
 # Start with base Edge settings from static file
 $EdgeContent = Get-Content -Path "$DirGPO\Edge.txt" -Raw
 
 # Append URLBlocklist configuration
-$EdgeContent += "`n`nUser:Non-Administrators`n"
-$EdgeContent += "SOFTWARE\Policies\Microsoft\Edge\URLBlocklist`n"
-$EdgeContent += "*`n"
-$EdgeContent += "DELETEALLVALUES`n"
-$EdgeContent += "`n"
-$EdgeContent += "User:Non-Administrators`n"
-$EdgeContent += "SOFTWARE\Policies\Microsoft\Edge\URLBlocklist`n"
-$EdgeContent += "1`n"
-$EdgeContent += "SZ:*`n"
-
+$EdgeContent += @(
+    "",
+    "User:Non-Administrators",
+    "SOFTWARE\Policies\Microsoft\Edge\URLBlocklist",
+    "*",
+    "DELETEALLVALUES",
+    "",
+    "User:Non-Administrators",
+    "SOFTWARE\Policies\Microsoft\Edge\URLBlocklist",
+    "1",
+    "SZ:*"
+)
 # Append URLAllowlist configuration
-$EdgeContent += "`n"
-$EdgeContent += "User:Non-Administrators`n"
-$EdgeContent += "SOFTWARE\Policies\Microsoft\Edge\URLAllowlist`n"
-$EdgeContent += "*`n"
-$EdgeContent += "DELETEALLVALUES`n"
-
+$EdgeContent += @(
+    "",
+    "User:Non-Administrators",
+    "SOFTWARE\Policies\Microsoft\Edge\URLAllowlist",
+    "*",
+    "DELETEALLVALUES"
+)
 # Add each allowed URL to the allowlist
 $urlIndex = 1
 foreach ($url in $AllowedUrls) {
-    $EdgeContent += "`n"
-    $EdgeContent += "User:Non-Administrators`n"
-    $EdgeContent += "SOFTWARE\Policies\Microsoft\Edge\URLAllowlist`n"
-    $EdgeContent += "$urlIndex`n"
-    $EdgeContent += "SZ:$url`n"
+    $EdgeContent += @(
+        "",
+        "User:Non-Administrators",
+        "SOFTWARE\Policies\Microsoft\Edge\URLAllowlist",
+        "$urlIndex",
+        "SZ:$url"
+    )
     $urlIndex++
 }
 
@@ -606,23 +509,23 @@ $EdgeFile = Join-Path -Path "$env:SystemRoot\SystemTemp" -ChildPath 'Edge.txt'
 $EdgeContent | Out-File -FilePath $EdgeFile -Encoding ascii -Force
 
 $null = cmd /c lgpo.exe /t "$EdgeFile" '2>&1'
-Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Configuring Microsoft Edge policies via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 72 -Message "Configuring Microsoft Edge policies via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
 Remove-Item -Path $EdgeFile -Force -ErrorAction SilentlyContinue
 
 $null = cmd /c lgpo.exe /t "$DirGPO\Ctrl+Alt+Del-HideTaskManager.txt" '2>&1'
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Disabled Task Manager via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
 
 $null = cmd /c lgpo.exe /t "$DirGPO\HideAndRestrictDrives.txt" '2>&1'
-Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Hid and restricted access to drives via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 81 -Message "Hid and restricted access to drives via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
     
 $null = cmd /c lgpo.exe /t "$DirGPO\Ctrl+Alt+Del-HideLock-HideSignOut-HideSwitchUser.txt" '2>&1'
-Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Removed logoff, change password, lock workstation, and fast user switching entry points via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"  
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 82 -Message "Removed logoff, change password, lock workstation, and fast user switching entry points via Local Group Policy Non-Administrators Settings.`nlgpo.exe Exit Code: [$LastExitCode]"  
 
 $null = cmd /c lgpo.exe /t "$DirGPO\DisablePrivacyExperience.txt" '2>&1'
-Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Disabled the First Logon Privacy Experience via the Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 83 -Message "Disabled the First Logon Privacy Experience via the Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
     
 $null = cmd /c lgpo.exe /t "$DirGPO\DisablePasswordForUnlock.txt" '2>&1'
-Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Disabled password requirement for screen saver lock and wake from sleep via Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 84 -Message "Disabled password requirement for screen saver lock and wake from sleep via Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
 
 If ($ConfigureAutomaticMaintenance) {
     # Configure Automatic Maintenance settings via Local Group Policy
@@ -637,21 +540,21 @@ If ($ConfigureAutomaticMaintenance) {
         # Include random delay - replace both values and add randomized setting
         $content = (Get-Content -Path $SourceFile).Replace('<ActivationBoundary>', $MaintenanceActivationTimeISO)
         $content += @(
-            '',
-            'Computer',
-            'Software\Policies\Microsoft\Windows\Task Scheduler\Maintenance',
-            'Randomized',
-            'DWORD:1',
-            '',
-            'Computer',
-            'Software\Policies\Microsoft\Windows\Task Scheduler\Maintenance',
-            'RandomDelay',
+            "",
+            "Computer",
+            "Software\Policies\Microsoft\Windows\Task Scheduler\Maintenance",
+            "Randomized",
+            "DWORD:1",
+            "",
+            "Computer",
+            "Software\Policies\Microsoft\Windows\Task Scheduler\Maintenance",
+            "RandomDelay",
             "SZ:$MaintenanceRandomDelayPT"
         )
         $content | Out-File $OutFile
     }    
     $null = cmd /c lgpo /s "$outFile" '2>&1'
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Configured Automatic Maintenance settings via Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 85 -Message "Configured Automatic Maintenance settings via Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
     Remove-Item -Path $outFile -Force -ErrorAction SilentlyContinue
 }
 
@@ -661,7 +564,7 @@ If ($SetPowerPolicies) {
     $outFile = Join-Path -Path "$env:SystemRoot\SystemTemp" -ChildPath 'PowerSettings.txt'
     (Get-Content -Path $SourceFile).Replace('<SleepTimeOut>', ($IdleSleepTimeoutMinutes * 60)) | Out-File $OutFile
     $null = cmd /c lgpo /s "$outFile" '2>&1'
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 80 -Message "Configured Power Settings with idle sleep timeout = $IdleSleepTimeoutMinutes minutes via Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 86 -Message "Configured Power Settings with idle sleep timeout = $IdleSleepTimeoutMinutes minutes via Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
     Remove-Item -Path $outFile -Force -ErrorAction SilentlyContinue
 }
 
@@ -739,14 +642,14 @@ Switch ($WindowsAppAutoLogoffConfig) {
 
 
 # create the reg key restore file if it doesn't exist, else load it to compare for appending new rows.
-Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 97 -Message "Creating a Registry key restore file for Kiosk Mode uninstall."
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 91 -Message "Creating a Registry key restore file for Kiosk Mode uninstall."
 $FileRestore = "$DirKiosk\RegKeyRestore.csv"
 New-Item -Path $FileRestore -ItemType File -Force | Out-Null
 Add-Content -Path $FileRestore -Value 'Path,Name,PropertyType,Value,Description'
 
 # Check if any registry keys require HKCU access before loading the hive     
 If ($RegValues | Where-Object { $_.Path -like 'HKCU:*' }) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 11 -EntryType Information -Message "Loading Default User Hive for HKCU registry operations."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 92 -EntryType Information -Message "Loading Default User Hive for HKCU registry operations."
     Start-Process -FilePath "REG.exe" -ArgumentList "LOAD", "HKLM\Default", "$env:SystemDrive\Users\default\ntuser.dat" -Wait
 }
 
@@ -765,7 +668,7 @@ ForEach ($Entry in $RegValues) {
     $PropertyType = $Entry.PropertyType
     $Value = $Entry.Value
     $Description = $Entry.Description
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 99 -Message "Processing Registry Value to '$Description'."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 93 -Message "Processing Registry Value to '$Description'."
 
     If ($Path -like 'HKCU:*') {
         $PathHKLM = $Path.Replace("HKCU:\", "HKLM:\Default\")
@@ -785,21 +688,21 @@ ForEach ($Entry in $RegValues) {
     If ($Value -ne '' -and $null -ne $Value) {
         # This is a set action
         Set-RegistryValue -Path $PathHKLM -Name $Name -PropertyType $PropertyType -Value $Value       
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 100 -Message "Setting '$PropertyType' Value '$Name' with Value '$Value' to '$Path'"
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 94 -Message "Setting '$PropertyType' Value '$Name' with Value '$Value' to '$Path'"
     }
     Elseif ($CurrentRegValue) {     
         Remove-ItemProperty -Path $PathHKLM -Name $Name -ErrorAction SilentlyContinue
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 102 -Message "Deleted Value '$Name' from '$Path'."
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 95 -Message "Deleted Value '$Name' from '$Path'."
     }               
 }    
 
 If (Test-Path -Path 'HKLM:\Default') {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 103 -Message "Unloading Default User Hive Registry Keys via Reg.exe."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 96 -Message "Unloading Default User Hive Registry Keys via Reg.exe."
     [GC]::Collect()
     [GC]::WaitForPendingFinalizers()
     Start-Sleep -Seconds 5
     $null = cmd /c REG UNLOAD "HKLM\Default" '2>&1'
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 104 -Message "Reg.exe Exit Code: [$LastExitCode]"
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 97 -Message "Reg.exe Exit Code: [$LastExitCode]"
 }
 
 #endregion Registry Edits
@@ -807,7 +710,7 @@ If (Test-Path -Path 'HKLM:\Default') {
 
 #region AppLocker Configuration
 
-Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 120 -Message "Applying AppLocker Policy to disable Edge, Notepad, and Search for the Kiosk User."
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 110 -Message "Applying AppLocker Policy to disable Edge, Notepad, and Search for the Kiosk User."
 # If there is an existing applocker policy, back it up and store its XML for restore.
 # Else, copy a blank policy to the restore location.
 # Then apply the new AppLocker Policy
@@ -821,7 +724,7 @@ Else {
     Copy-Item -Path $FileAppLockerClear -Destination "$DirKiosk\ApplockerPolicy.xml" -Force
 }
 Set-AppLockerPolicy -XmlPolicy $FileAppLockerKiosk
-Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 121 -Message "Enabling and Starting Application Identity Service"
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 111 -Message "Enabling and Starting Application Identity Service"
 Set-Service -Name AppIDSvc -StartupType Automatic -ErrorAction SilentlyContinue
 
 
@@ -836,11 +739,11 @@ If (-not (Test-Path -Path $SchedTasksScriptsDir)) {
 $TaskScriptName = 'Set-KeyboardFilterConfiguration.ps1'
 Copy-Item -Path (Join-Path -Path $DirSchedTasksScripts -ChildPath $TaskScriptName) -Destination $SchedTasksScriptsDir -Force
 $TaskScriptFullName = Join-Path -Path $SchedTasksScriptsDir -ChildPath $TaskScriptName
-Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventID 125 -Message "Enabling Keyboard filter."
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventID 120 -Message "Enabling Keyboard filter."
 Enable-WindowsOptionalFeature -Online -FeatureName Client-KeyboardFilter -All -NoRestart
 # Configure Keyboard Filter after reboot
 $TaskName = "Windows-App-Kiosk - Configure Keyboard Filter"
-Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 126 -Message "Creating Scheduled Task: '$TaskName'."
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 121 -Message "Creating Scheduled Task: '$TaskName'."
 $TaskScriptEventSource = 'Keyboard Filter Configuration'
 $TaskDescription = "Configures the Keyboard Filter"
 New-EventLog -LogName $EventLog -Source $TaskScriptEventSource -ErrorAction SilentlyContinue     
@@ -851,10 +754,10 @@ $TaskPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceA
 $TaskSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -MultipleInstances IgnoreNew -AllowStartIfOnBatteries
 Register-ScheduledTask -TaskName $TaskName -Description $TaskDescription -Action $TaskAction -Settings $TaskSettings -Principal $TaskPrincipal -Trigger $TaskTrigger
 If (Get-ScheduledTask | Where-Object { $_.TaskName -eq "$TaskName" }) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 119 -Message "Scheduled Task created successfully."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 122 -Message "Scheduled Task created successfully."
 }
 Else {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Error -EventId 120 -Message "Scheduled Task not created."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Error -EventId 123 -Message "Scheduled Task not created."
     Exit 1618
 }
 

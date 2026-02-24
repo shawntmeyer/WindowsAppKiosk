@@ -257,8 +257,6 @@ If (Test-Path -Path 'HKLM:\Software\Kiosk') {
     }
 
     If (Get-LocalUser | Where-Object { $_.Name -eq 'KioskUser0' }) {
-        $Removed = $true
-
         # Delete Kiosk User Profile if it exists. First Logoff Kiosk User.
         try {
             ## Find all sessions matching the specified username
