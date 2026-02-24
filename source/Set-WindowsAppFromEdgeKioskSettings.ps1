@@ -419,7 +419,7 @@ $XmlContent | Set-Content -Path $XmlFile -Force
 Set-AssignedAccessShellLauncher -FilePath $XmlFile
 If (Get-AssignedAccessShellLauncher) {
     [xml]$Xml = Get-Content -Path $XmlFile
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 53 -Message "Shell Launcher configuration successfully applied.`n-----BEGIN CONFIGURATION-----`n$Xml`n-----END CONFIGURATION-----"
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 53 -Message "Shell Launcher configuration successfully applied."
 }
 Else {
     Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Error -EventId 54 -Message "Shell Launcher configuration failed. Computer should be restarted first."
