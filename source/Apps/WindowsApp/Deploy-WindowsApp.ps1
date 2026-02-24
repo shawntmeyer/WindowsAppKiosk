@@ -173,7 +173,11 @@ If ($DeploymentType -ne "Uninstall") {
 
     try {        
         Write-Output "Creating RunOnce 'InstallWindowsApp' for Default User"
-        New-ItemProperty -Path "HKLM:\Default\Software\Microsoft\Windows\CurrentVersion\RunOnce" -PropertyType String -Name InstallWindowsApp -Value $RunOnceCmd -Force | Out-Null
+        $DefaultUserRunOncePath = "HKLM:\Default\Software\Microsoft\Windows\CurrentVersion\RunOnce"
+        if (-not (Test-Path $DefaultUserRunOncePath)) {
+            New-Item -Path $DefaultUserRunOncePath -Force | Out-Null
+        }
+        New-ItemProperty -Path $DefaultUserRunOncePath -PropertyType String -Name InstallWindowsApp -Value $RunOnceCmd -Force | Out-Null
     }
     finally {
         [GC]::Collect()
