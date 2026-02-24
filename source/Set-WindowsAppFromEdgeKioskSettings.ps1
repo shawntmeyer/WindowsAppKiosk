@@ -462,6 +462,24 @@ ForEach ($Package in $ProvisioningPackages) {
 
 #region Local GPO Settings
 
+# Copy ADMX files to PolicyDefinitions folder
+$AdmxFiles = Get-ChildItem -Path $DirGPO -Filter "*.admx" -File
+foreach ($AdmxFile in $AdmxFiles) {
+    Copy-Item -Path $AdmxFile.FullName -Destination "$env:SystemRoot\PolicyDefinitions" -Force
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 68 -Message "Copied $($AdmxFile.Name) to PolicyDefinitions folder."
+}
+
+# Copy ADML files to PolicyDefinitions\en-US folder
+$AdmlPath = Join-Path -Path $DirGPO -ChildPath "en-US"
+if (Test-Path -Path $AdmlPath) {
+    $PolicyDefEnUS = "$env:SystemRoot\PolicyDefinitions\en-US"
+    $AdmlFiles = Get-ChildItem -Path $AdmlPath -Filter "*.adml" -File
+    foreach ($AdmlFile in $AdmlFiles) {
+        Copy-Item -Path $AdmlFile.FullName -Destination $PolicyDefEnUS -Force
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 69 -Message "Copied $($AdmlFile.Name) to PolicyDefinitions\en-US folder."
+    }
+}
+
 $null = cmd /c lgpo.exe /t "$DirGPO\AllowedOrigins.txt" '2>&1'
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 70 -Message "Configured ms-avd or ms-cloudpc url protocol to launch windows app automatically via Local Group Policy Machine Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
 
