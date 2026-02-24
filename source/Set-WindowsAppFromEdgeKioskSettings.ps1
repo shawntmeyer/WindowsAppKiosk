@@ -275,7 +275,7 @@ If ($ConfigureAutomaticMaintenance) {
 
 # Ensure critical protocol URLs are always included for Windows App functionality
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 2 -Message "Validating AllowedUrls parameter to ensure required protocol handlers for Windows App functionality are included."
-$RequiredProtocols = @('ms-avd://*', 'ms-cloudpc://*')
+$RequiredProtocols = @('ms-avd://*', 'ms-cloudpc://*', 'workspaces://*', 'evo://*')
 foreach ($protocol in $RequiredProtocols) {
     if ($AllowedUrls -notcontains $protocol) {
         Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 3 -Message "Adding required protocol '$protocol' to AllowedUrls"
