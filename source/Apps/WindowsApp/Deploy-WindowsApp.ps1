@@ -164,6 +164,22 @@ If ($DeploymentType -ne "Uninstall") {
         Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
+    Write-Output "Configuring RunOnce for Windows App installation on first logon for Default User profile"
+    $RunOnceCmd = "cmd /c start /min `"`" powershell.exe -EP Bypass -NoLogo -NonInteractive -NoProfile -WindowStyle Hidden -Command `"Add-AppxPackage -RegisterByFamilyName -MainPackage MicrosoftCorporationII.Windows365_8wekyb3d8bbwe -EA SilentlyContinue`""
+
+    # Default User
+    Write-Output "Loading NTUSER.DAT for Default User"
+    REG.EXE LOAD HKLM\Default C:\Users\Default\NTUSER.DAT | Out-Null
+
+    try {        
+        Write-Output "Creating RunOnce 'InstallWindowsApp' for Default User"
+        New-ItemProperty -Path "HKLM:\Default\Software\Microsoft\Windows\CurrentVersion\RunOnce" -PropertyType String -Name InstallWindowsApp -Value $RunOnceCmd -Force | Out-Null
+    }
+    finally {
+        [GC]::Collect()
+        REG.EXE UNLOAD HKLM\Default | Out-Null
+    }
+
     # Configure Windows App Auto Logoff settings
     if ($AutoLogoffConfig -and $AutoLogoffConfig -ne 'Disabled') {
         Write-Output "Configuring Windows App Auto Logoff settings..."
