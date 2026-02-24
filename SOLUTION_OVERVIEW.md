@@ -9,6 +9,7 @@
 This repository contains a **customized kiosk solution** for Azure Virtual Desktop and Windows 365 access, tailored to specific customer requirements. The solution configures Microsoft Edge in kiosk mode to replace the Windows shell, displaying a web interface that launches the Windows App for remote desktop connections.
 
 **Configuration Characteristics:**
+
 - **Customized for Requirements** - Tailored to specific deployment needs and preferences
 - **Multi-Layered Security** - Shell Launcher with comprehensive access controls
 - **Automatic Logon** - Zero-touch user experience with KioskUser0 account
@@ -44,10 +45,6 @@ The ability to run the installation script with **SYSTEM privileges**. The easie
 
 Required only when using the `-InstallWindowsApp` parameter to automatically download Windows App from Microsoft. For air-gapped environments, place the Windows App MSIX file in the `source/Apps/WindowsApp/` directory and the script will use the local copy. **See [Windows App Deployment Guide](source/Apps/WindowsApp/README.md) for detailed offline installation instructions.**
 
-4️⃣ **Entra ID Device Join**
-
-For most scenarios, you should [join the device to Entra ID](https://learn.microsoft.com/en-us/entra/identity/devices/concept-directory-join) or [Entra ID Hybrid Join](https://learn.microsoft.com/en-us/entra/identity/devices/concept-hybrid-join) to enable seamless authentication to Azure Virtual Desktop or Windows 365 resources.
-
 ## How It Works
 
 ### Architecture Overview
@@ -61,9 +58,9 @@ This solution uses multiple Windows technologies working together to create a se
 │                                                             │
 │  1. Windows 11 Boots                                        │
 │  2. Assigned Access Auto-Logon → KioskUser0                 │
-│  3. Shell Launcher Replaces Explorer.exe with Edge         │
-│  4. Edge Opens in Kiosk Mode (Single-App)                  │
-│  5. Edge Displays Configured URL                           │
+│  3. Shell Launcher Replaces Explorer.exe with Edge          │
+│  4. Edge Opens in Kiosk Mode (Single-App)                   │
+│  5. Edge Displays Configured URL                            │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
                           ↓
@@ -72,10 +69,10 @@ This solution uses multiple Windows technologies working together to create a se
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  • User sees only Edge browser in fullscreen                │
-│  • Default: Local HTML with AVD/W365 launch buttons        │
-│  • Custom: Your web portal with ms-avd:// links            │
-│  • User clicks link → Windows App launches                 │
-│  • User connects to Azure Virtual Desktop / Windows 365    │
+│  • Default: Local HTML with AVD/W365 launch buttons         │
+│  • Custom: Your web portal with ms-avd:// links             │
+│  • User clicks link → Windows App launches                  │
+│  • User connects to Azure Virtual Desktop / Windows 365     │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
                           ↓
@@ -84,10 +81,10 @@ This solution uses multiple Windows technologies working together to create a se
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  • Windows App auto-logoff on close or idle                 │
-│  • Keyboard Filter blocks Windows key combinations         │
-│  • AppLocker prevents unauthorized apps                    │
-│  • Group Policy locks down system controls                 │
-│  • No access to Start, Settings, Task Manager, Explorer    │
+│  • Keyboard Filter blocks Windows key combinations          │
+│  • AppLocker prevents unauthorized apps                     │
+│  • Group Policy locks down system controls                  │
+│  • No access to Start, Settings, Task Manager, Explorer     │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -163,6 +160,7 @@ The solution provides automatic credential protection:
 **Recommended:** Use `ResetAppOnCloseOrIdle` with a 10-15 minute interval for public kiosks.
 
 When reset triggers:
+
 - All users signed out of Windows App
 - App data completely cleared
 - Cached credentials removed
@@ -189,10 +187,11 @@ For most kiosk deployments, use **ResetAppOnCloseOrIdle** for maximum security:
 
 ```powershell
 -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOrIdle' `
--WindowsAppAutoLogoffTimeInterval 15
+-WindowsAppAutoLogoffTimeInterval 60
 ```
 
 This configuration:
+
 - ✅ Protects credentials if user walks away without closing Windows App
 - ✅ Automatically resets after defined idle period
 - ✅ Also triggers reset when user closes the app
@@ -207,10 +206,11 @@ When `ResetAppOnCloseOrIdle` is configured:
 3. All accounts are signed out and app data is cleared
 4. Next user gets a fresh Windows App instance
 
-**Example:** With `WindowsAppAutoLogoffTimeInterval = 15`:
-- App checks every 15 minutes
-- If 15+ minutes of OS idle time detected → reset
-- User can walk away and credentials are protected after 15 minutes
+**Example:** With `WindowsAppAutoLogoffTimeInterval = 60`:
+
+- App checks every 60 minutes
+- If 60+ minutes of OS idle time detected → reset
+- User can walk away and credentials are protected after 60 minutes
 
 ## Power Management and Maintenance
 
@@ -225,6 +225,7 @@ Configure Windows automatic maintenance to run during off-hours:
 ```
 
 **What it does:**
+
 - Windows Update, security scanning, disk defrag run at specified time
 - Random delay prevents all kiosks from starting maintenance simultaneously
 - Ensures devices stay current without user intervention
@@ -241,6 +242,7 @@ Configure power settings for shared device scenarios:
 ```
 
 **What it does:**
+
 - Configures power button, sleep button, and lid actions
 - Sets idle sleep timeout
 - Disables hibernation
@@ -256,39 +258,45 @@ Configure power settings for shared device scenarios:
 The solution implements defense-in-depth with multiple security layers:
 
 **Layer 1: Shell Replacement**
+
 - Explorer.exe replaced with Edge.exe
 - No Start menu, taskbar, or desktop access
 - User cannot access Windows UI elements
 
 **Layer 2: AppLocker**
-- Blocks msedge.exe features (Settings, History, Downloads)
+
 - Blocks notepad.exe, search app (SearchHost.exe)
 - Only allows authorized applications for KioskUser0
 
 **Layer 3: Group Policy**
+
 - Task Manager disabled
 - Drive access hidden and restricted
 - Ctrl+Alt+Del options removed
 - Privacy settings optimized
 
 **Layer 4: Keyboard Filter**
+
 - Windows key combinations blocked
 - Alt+Tab disabled
 - Ctrl+Alt+Del restricted
 - F11 (fullscreen toggle) blocked
 
 **Layer 5: Windows App Auto Logoff**
+
 - Automatic credential reset
 - Prevents credential theft from abandoned sessions
 - Configurable idle timeouts
 
 **Layer 6: URL Navigation Restriction**
+
 - Controls which URLs Edge can navigate to
 - Blocks all URLs except explicitly allowed list
 - Prevents browsing to unauthorized websites
 - Supports wildcards for flexible domain matching
 
 **Layer 7: Provisioning & Registry**
+
 - Windows Spotlight disabled
 - Advertising ID disabled
 - First-run experiences skipped
@@ -360,6 +368,7 @@ The `-KioskUrl` parameter supports:
 The `-AllowedUrls` parameter controls which URLs Microsoft Edge can navigate to. By default, Edge blocks ALL URLs (`*`) and only allows those explicitly specified in the allowlist.
 
 **Default Configuration:**
+
 ```powershell
 -AllowedUrls @(
     'file://*',
@@ -372,10 +381,12 @@ The `-AllowedUrls` parameter controls which URLs Microsoft Edge can navigate to.
 
 > [!IMPORTANT]
 > **Automatic Inclusions:**
+> 
 > - The protocols `ms-avd://*` and `ms-cloudpc://*` are **always automatically included** in the allowlist, even if you don't specify them. This ensures Windows App can launch Azure Virtual Desktop and Windows 365 connections properly.
 > - Your specified `KioskUrl` is also automatically included (unless already covered by a wildcard like `file://*` or `https://*.tailspintoys.com`).
 
 **Custom Configuration:**
+
 ```powershell
 -AllowedUrls @(
     'https://portal.tailspintoys.com',  # Automatically allows all *.portal.tailspintoys.com subdomains
@@ -386,6 +397,7 @@ The `-AllowedUrls` parameter controls which URLs Microsoft Edge can navigate to.
 ```
 
 **With Explicit Subdomain-Only Restriction:**
+
 ```powershell
 -AllowedUrls @(
     '.tailspintoys.com',  # ONLY subdomains like www.tailspintoys.com, NOT tailspintoys.com itself
@@ -394,6 +406,7 @@ The `-AllowedUrls` parameter controls which URLs Microsoft Edge can navigate to.
 ```
 
 **How It Works:**
+
 1. Edge URLBlocklist is set to `*` (block everything)
 2. Edge URLAllowlist contains only your specified URLs
 3. Users attempting to navigate elsewhere are blocked
@@ -402,6 +415,7 @@ The `-AllowedUrls` parameter controls which URLs Microsoft Edge can navigate to.
    - `.tailspintoys.com` (with leading dot) matches ONLY subdomains, not the root
 
 **Security Considerations:**
+
 - **Critical protocols are always included:** `ms-avd://*` and `ms-cloudpc://*` are automatically added to ensure Windows App works
 - **Your KioskUrl is always included:** The script intelligently checks if it's already covered before adding
 - **Include `file://*`** if using local HTML files
@@ -429,6 +443,7 @@ The `-AllowedUrls` parameter controls which URLs Microsoft Edge can navigate to.
 **Example Attack Scenario Prevented:**
 
 If your kiosk page has a link that redirects through an external site:
+
 1. User clicks link → Edge attempts to load `https://redirect.badsite.com`
 2. URLBlocklist blocks it because it's not in the allowlist
 3. User cannot navigate away from authorized URLs
@@ -464,11 +479,13 @@ Call removal scripts automatically during installation:
 Run the removal scripts independently:
 
 **Remove Current Configuration:**
+
 ```powershell
 .\Remove-WindowsAppKioskSettings.ps1
 ```
 
 **Remove Legacy Configurations:**
+
 ```powershell
 .\Remove-LegacyKioskSettings.ps1
 ```
@@ -476,6 +493,7 @@ Run the removal scripts independently:
 ### What Gets Removed
 
 Both removal scripts:
+
 - ✅ Remove Assigned Access and Shell Launcher configurations
 - ✅ Delete Local Group Policy Objects
 - ✅ Uninstall provisioning packages
