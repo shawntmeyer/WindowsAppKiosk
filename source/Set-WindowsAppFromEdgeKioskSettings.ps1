@@ -199,7 +199,7 @@ $DirApps = Join-Path -Path $Script:Dir -ChildPath 'Apps'
 $DirAssignedAccess = Join-Path -Path $Script:Dir -ChildPath 'AssignedAccess'
 $DirProvisioningPackages = Join-Path -Path $Script:Dir -ChildPath 'ProvisioningPackages'
 $DirShellLauncherSettings = Join-Path -Path $DirAssignedAccess -ChildPath 'ShellLauncher'
-$DirGPO = Join-Path -Path $Script:Dir -ChildPath "GPOSettings"
+$DirGPO = Join-Path -Path $Script:Dir -ChildPath "GPOs"
 $DirKiosk = Join-Path -Path $env:SystemDrive -ChildPath "KioskSettings"
 $DirTools = Join-Path -Path $Script:Dir -ChildPath "Tools"
 $DirFunctions = Join-Path -Path $Script:Dir -ChildPath "Scripts\Functions"
@@ -463,14 +463,15 @@ ForEach ($Package in $ProvisioningPackages) {
 #region Local GPO Settings
 
 # Copy ADMX files to PolicyDefinitions folder
-$AdmxFiles = Get-ChildItem -Path $DirGPO -Filter "*.admx" -File
+$DirADMXSource = Join-Path -Path $DirGPO -ChildPath 'admx'
+$AdmxFiles = Get-ChildItem -Path $DirADMXSource -Filter "*.admx" -File
 foreach ($AdmxFile in $AdmxFiles) {
     Copy-Item -Path $AdmxFile.FullName -Destination "$env:SystemRoot\PolicyDefinitions" -Force
     Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 68 -Message "Copied $($AdmxFile.Name) to PolicyDefinitions folder."
 }
 
 # Copy ADML files to PolicyDefinitions\en-US folder
-$AdmlPath = Join-Path -Path $DirGPO -ChildPath "en-US"
+$AdmlPath = Join-Path -Path $DirADMXSource -ChildPath "en-US"
 if (Test-Path -Path $AdmlPath) {
     $PolicyDefEnUS = "$env:SystemRoot\PolicyDefinitions\en-US"
     $AdmlFiles = Get-ChildItem -Path $AdmlPath -Filter "*.adml" -File
