@@ -110,7 +110,8 @@ If (Test-Path -Path $AutologonRegPath) {
     $AutologonUserName = (Get-ItemProperty -Path $AutologonRegPath -Name 'DefaultUserName' -ErrorAction SilentlyContinue).DefaultUserName
     If ($AutologonUserName) {
         Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 4 -EntryType Information -Message "Found autologon configured for user: $AutologonUserName"
-    } Else {
+    }
+    Else {
         Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 5 -EntryType Information -Message "No autologon user configured."
     }
 }
@@ -155,126 +156,11 @@ Else {
     Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 17 -EntryType Information -Message "GroupPolicyUsers folder does not exist."
 }
 
-# Remove Machine-Level Logoff Scripts
-Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 20 -EntryType Information -Message "Checking for machine-level logoff scripts."
-$LogoffScriptRemoved = $false
-
-# Check for scheduled tasks that run logoff.vbs
-$LogoffTasks = Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { 
-    $_.Actions.Execute -like '*logoff.vbs*' -or 
-    $_.Actions.Arguments -like '*logoff.vbs*' -or
-    $_.Actions.Execute -like '*logoff.bat*' -or
-    $_.Actions.Arguments -like '*logoff.bat*'
-}
-If ($LogoffTasks) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 21 -EntryType Information -Message "Found $($LogoffTasks.Count) scheduled task(s) referencing logoff scripts. Removing them."
-    $LogoffTasks | ForEach-Object {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 22 -EntryType Information -Message "Removing scheduled task: $($_.TaskName)"
-        Unregister-ScheduledTask -TaskName $_.TaskName -Confirm:$false -ErrorAction SilentlyContinue
-    }
-    $LogoffScriptRemoved = $true
-}
-
-# Check for logoff scripts in machine-level Group Policy Scripts registry
-$LogoffScriptsRegPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy\Scripts\Logoff'
-If (Test-Path -Path $LogoffScriptsRegPath) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 23 -EntryType Information -Message "Found machine-level logoff scripts registry configuration. Removing it."
-    Remove-Item -Path $LogoffScriptsRegPath -Recurse -Force -ErrorAction SilentlyContinue
-    $LogoffScriptRemoved = $true
-}
-
-# Check for logoff script files in common machine-level locations
-$CommonScriptPaths = @(
-    "$env:SystemRoot\System32\GroupPolicy\User\Scripts\Logoff",
-    "$env:SystemRoot\System32\GroupPolicy\Machine\Scripts\Logoff",
-    "$DirKiosk\Scripts"
-)
-ForEach ($ScriptPath in $CommonScriptPaths) {
-    If (Test-Path -Path $ScriptPath) {
-        $LogoffScripts = Get-ChildItem -Path $ScriptPath -Include @('*.vbs', '*.bat') -ErrorAction SilentlyContinue
-        If ($LogoffScripts) {
-            ForEach ($Script in $LogoffScripts) {
-                If ($Script.Name -like 'logoff.*') {
-                    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 24 -EntryType Information -Message "Found logoff script at '$($Script.FullName)'. Removing it."
-                    Remove-Item -Path $Script.FullName -Force -ErrorAction SilentlyContinue
-                    $LogoffScriptRemoved = $true
-                }
-            }
-        }
-    }
-}
-
-If ($LogoffScriptRemoved) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 25 -EntryType Information -Message "Machine-level logoff script cleanup completed."
-} Else {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 26 -EntryType Information -Message "No machine-level logoff scripts found."
-}
-
-# Remove Machine-Level Logon Scripts
-Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 30 -EntryType Information -Message "Checking for machine-level logon scripts."
-$LogonScriptRemoved = $false
-
-# Check for scheduled tasks that run logon scripts
-$LogonTasks = Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { 
-    ($_.Actions.Execute -like '*.vbs' -or $_.Actions.Execute -like '*.bat' -or 
-     $_.Actions.Arguments -like '*.vbs' -or $_.Actions.Arguments -like '*.bat') -and
-    ($_.Triggers.TriggerType -contains 'Logon' -or $_.TaskName -like '*logon*')
-}
-If ($LogonTasks) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 31 -EntryType Information -Message "Found $($LogonTasks.Count) scheduled task(s) for logon scripts. Removing them."
-    $LogonTasks | ForEach-Object {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 32 -EntryType Information -Message "Removing scheduled task: $($_.TaskName)"
-        Unregister-ScheduledTask -TaskName $_.TaskName -Confirm:$false -ErrorAction SilentlyContinue
-    }
-    $LogonScriptRemoved = $true
-}
-
-# Check for logon scripts in machine-level Group Policy Scripts registry
-$LogonScriptsRegPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy\Scripts\Logon'
-If (Test-Path -Path $LogonScriptsRegPath) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 33 -EntryType Information -Message "Found machine-level logon scripts registry configuration. Removing it."
-    Remove-Item -Path $LogonScriptsRegPath -Recurse -Force -ErrorAction SilentlyContinue
-    $LogonScriptRemoved = $true
-}
-
-# Check for Startup scripts (machine startup)
-$StartupScriptsRegPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy\Scripts\Startup'
-If (Test-Path -Path $StartupScriptsRegPath) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 34 -EntryType Information -Message "Found machine-level startup scripts registry configuration. Removing it."
-    Remove-Item -Path $StartupScriptsRegPath -Recurse -Force -ErrorAction SilentlyContinue
-    $LogonScriptRemoved = $true
-}
-
-# Check for logon script files in common machine-level locations
-$CommonLogonScriptPaths = @(
-    "$env:SystemRoot\System32\GroupPolicy\User\Scripts\Logon",
-    "$env:SystemRoot\System32\GroupPolicy\Machine\Scripts\Logon",
-    "$env:SystemRoot\System32\GroupPolicy\Machine\Scripts\Startup",
-    "$DirKiosk\Scripts"
-)
-ForEach ($ScriptPath in $CommonLogonScriptPaths) {
-    If (Test-Path -Path $ScriptPath) {
-        $LogonScripts = Get-ChildItem -Path $ScriptPath -Include @('*.vbs', '*.bat') -ErrorAction SilentlyContinue
-        If ($LogonScripts) {
-            ForEach ($Script in $LogonScripts) {
-                If ($Script.Name -like 'logon.*' -or $Script.Name -like 'kiosk.*') {
-                    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 35 -EntryType Information -Message "Found logon script at '$($Script.FullName)'. Removing it."
-                    Remove-Item -Path $Script.FullName -Force -ErrorAction SilentlyContinue
-                    $LogonScriptRemoved = $true
-                }
-            }
-        }
-    }
-}
-
-If ($LogonScriptRemoved) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 36 -EntryType Information -Message "Machine-level logon script cleanup completed."
-} Else {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 37 -EntryType Information -Message "No machine-level logon scripts found."
-}
+# Note: Logon/Logoff scripts are managed within the Non-Administrators GPO
+# The GPO removal above handles all script cleanup automatically
 
 # Remove Autologon Configuration from registry
-Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 40 -EntryType Information -Message "Removing autologon configuration from registry."
+Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 20 -EntryType Information -Message "Removing autologon configuration from registry."
 $AutologonRemoved = $false
 
 If (Test-Path -Path $AutologonRegPath) {
@@ -288,20 +174,21 @@ If (Test-Path -Path $AutologonRegPath) {
     
     ForEach ($Property in $AutologonProperties) {
         If (Get-ItemProperty -Path $AutologonRegPath -Name $Property -ErrorAction SilentlyContinue) {
-            Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 41 -EntryType Information -Message "Removing autologon property: $Property"
+            Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 21 -EntryType Information -Message "Removing autologon property: $Property"
             Remove-ItemProperty -Path $AutologonRegPath -Name $Property -Force -ErrorAction SilentlyContinue
             $AutologonRemoved = $true
         }
     }
     
     If ($AutologonRemoved) {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 42 -EntryType Information -Message "Autologon configuration removed successfully."
-    } Else {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 43 -EntryType Information -Message "No autologon configuration found."
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 22 -EntryType Information -Message "Autologon configuration removed successfully."
+    }
+    Else {
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 23 -EntryType Information -Message "No autologon configuration found."
     }
 }
 
-Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 45 -EntryType Information -Message "Phase 1 completed: Machine-level settings cleaned."
+Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 25 -EntryType Information -Message "Phase 1 completed: Machine-level settings cleaned."
 
 #endregion Phase 1 - Machine-Level Settings Cleanup
 
@@ -329,14 +216,17 @@ If ($AutologonUserName) {
                 Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 53 -EntryType Information -Message "User '$AutologonUserName' logged off successfully."
                 # Wait for logoff to complete
                 Start-Sleep -Seconds 5
-            } Else {
+            }
+            Else {
                 Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 54 -EntryType Warning -Message "Logoff command returned exit code: $($LogoffResult.ExitCode)"
             }
         }
-    } Else {
+    }
+    Else {
         Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 55 -EntryType Information -Message "User '$AutologonUserName' is not currently logged in."
     }
-} Else {
+}
+Else {
     Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 56 -EntryType Information -Message "No autologon user to log off."
 }
 
@@ -365,18 +255,22 @@ If ($AutologonUserName) {
             Start-Sleep -Seconds 3
             If (!(Test-Path -Path $UserProfilePath)) {
                 Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 63 -EntryType Information -Message "User profile deleted successfully."
-            } Else {
+            }
+            Else {
                 Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 64 -EntryType Warning -Message "User profile folder still exists at: $UserProfilePath"
                 # Try to force remove the folder
                 Remove-Item -Path $UserProfilePath -Recurse -Force -ErrorAction SilentlyContinue
             }
-        } Catch {
+        }
+        Catch {
             Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 65 -EntryType Error -Message "Failed to delete user profile: $_"
         }
-    } Else {
+    }
+    Else {
         Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 66 -EntryType Information -Message "No user profile found for: $AutologonUserName"
     }
-} Else {
+}
+Else {
     Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 67 -EntryType Information -Message "No autologon user profile to delete."
 }
 
@@ -412,100 +306,46 @@ If (Test-Path -Path $DefaultUserNTUserDat) {
                 Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 73 -EntryType Information -Message "Found custom shell in default user registry: $ShellValue. Removing it."
                 Remove-ItemProperty -Path $DefaultUserShellRegPath -Name 'Shell' -Force -ErrorAction SilentlyContinue
                 $DefaultUserSettingsRemoved = $true
-            } ElseIf ($ShellValue) {
+            }
+            ElseIf ($ShellValue) {
                 Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 74 -EntryType Information -Message "Default user shell is explorer.exe (normal). No change needed."
             }
         }
         
-        # Check for logoff scripts in default user registry
-        $DefaultUserLogoffScriptsRegPath = 'HKLM:\DefaultUserHive\Software\Microsoft\Windows\CurrentVersion\Group Policy\Scripts\Logoff'
-        If (Test-Path -Path $DefaultUserLogoffScriptsRegPath) {
-            Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 75 -EntryType Information -Message "Found logoff scripts in default user registry. Removing them."
-            Remove-Item -Path $DefaultUserLogoffScriptsRegPath -Recurse -Force -ErrorAction SilentlyContinue
-            $DefaultUserSettingsRemoved = $true
-        }
-        
-        # Check for logon scripts in default user registry
-        $DefaultUserLogonScriptsRegPath = 'HKLM:\DefaultUserHive\Software\Microsoft\Windows\CurrentVersion\Group Policy\Scripts\Logon'
-        If (Test-Path -Path $DefaultUserLogonScriptsRegPath) {
-            Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 76 -EntryType Information -Message "Found logon scripts in default user registry. Removing them."
-            Remove-Item -Path $DefaultUserLogonScriptsRegPath -Recurse -Force -ErrorAction SilentlyContinue
-            $DefaultUserSettingsRemoved = $true
-        }
-        
-        # Check for kiosk-related registry values in Run/RunOnce
-        $DefaultUserRunPaths = @(
-            'HKLM:\DefaultUserHive\Software\Microsoft\Windows\CurrentVersion\Run',
-            'HKLM:\DefaultUserHive\Software\Microsoft\Windows\CurrentVersion\RunOnce'
-        )
-        
-        ForEach ($RunPath in $DefaultUserRunPaths) {
-            If (Test-Path -Path $RunPath) {
-                $RegProperties = Get-ItemProperty -Path $RunPath -ErrorAction SilentlyContinue
-                If ($RegProperties) {
-                    $RegProperties.PSObject.Properties | Where-Object { 
-                        $_.Name -notlike 'PS*' -and 
-                        ($_.Value -like '*logoff.*' -or $_.Value -like '*logon.*' -or $_.Value -like '*kiosk.*')
-                    } | ForEach-Object {
-                        Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 77 -EntryType Information -Message "Removing kiosk-related registry value '$($_.Name)' from '$RunPath' in default user hive."
-                        Remove-ItemProperty -Path $RunPath -Name $_.Name -Force -ErrorAction SilentlyContinue
-                        $DefaultUserSettingsRemoved = $true
-                    }
-                }
-            }
-        }
-        
+        # Note: Logon/Logoff scripts are managed within the Non-Administrators GPO
+        # The GPO removal in Phase 1 handles all script cleanup automatically
+       
+     
         # Unload the default user hive
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 78 -EntryType Information -Message "Unloading default user registry hive."
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 76 -EntryType Information -Message "Unloading default user registry hive."
         [GC]::Collect()
         [GC]::WaitForPendingFinalizers()
         Start-Sleep -Seconds 5
         $HiveUnloadResult = Start-Process -FilePath "REG.exe" -ArgumentList "UNLOAD", "HKLM\DefaultUserHive" -Wait -PassThru -NoNewWindow
         
         If ($HiveUnloadResult.ExitCode -ne 0) {
-            Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 79 -EntryType Warning -Message "Default user hive unload returned exit code: $($HiveUnloadResult.ExitCode)"
-        } Else {
-            Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 80 -EntryType Information -Message "Default user hive unloaded successfully."
+            Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 77 -EntryType Warning -Message "Default user hive unload returned exit code: $($HiveUnloadResult.ExitCode)"
+        }
+        Else {
+            Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 78 -EntryType Information -Message "Default user hive unloaded successfully."
         }
     }
     Else {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 81 -EntryType Warning -Message "Failed to load default user registry hive. Exit code: $($HiveLoadResult.ExitCode)"
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 79 -EntryType Warning -Message "Failed to load default user registry hive. Exit code: $($HiveLoadResult.ExitCode)"
     }
 }
 Else {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 82 -EntryType Warning -Message "Default user NTUSER.DAT not found at: $DefaultUserNTUserDat"
-}
-
-# Check for legacy scripts/files in default user profile folders
-Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 83 -EntryType Information -Message "Checking default user profile folders for legacy script files."
-$DefaultUserScriptPaths = @(
-    "$DefaultUserProfilePath\AppData\Local\GroupPolicy\User\Scripts\Logoff",
-    "$DefaultUserProfilePath\AppData\Local\GroupPolicy\User\Scripts\Logon",
-    "$DefaultUserProfilePath\Scripts"
-)
-
-ForEach ($ScriptPath in $DefaultUserScriptPaths) {
-    If (Test-Path -Path $ScriptPath) {
-        $LegacyScripts = Get-ChildItem -Path $ScriptPath -Include @('*.vbs', '*.bat') -ErrorAction SilentlyContinue
-        If ($LegacyScripts) {
-            ForEach ($Script in $LegacyScripts) {
-                If ($Script.Name -like 'logoff.*' -or $Script.Name -like 'logon.*' -or $Script.Name -like 'kiosk.*') {
-                    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 84 -EntryType Information -Message "Found legacy script in default user profile at '$($Script.FullName)'. Removing it."
-                    Remove-Item -Path $Script.FullName -Force -ErrorAction SilentlyContinue
-                    $DefaultUserSettingsRemoved = $true
-                }
-            }
-        }
-    }
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 80 -EntryType Warning -Message "Default user NTUSER.DAT not found at: $DefaultUserNTUserDat"
 }
 
 If ($DefaultUserSettingsRemoved) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 85 -EntryType Information -Message "Default user profile cleanup completed. Legacy settings removed."
-} Else {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 86 -EntryType Information -Message "No legacy kiosk settings found in default user profile."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 81 -EntryType Information -Message "Default user profile cleanup completed. Legacy settings removed."
+}
+Else {
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 82 -EntryType Information -Message "No legacy kiosk settings found in default user profile."
 }
 
-Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 87 -EntryType Information -Message "Phase 4 completed: Default user profile cleaned."
+Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 83 -EntryType Information -Message "Phase 4 completed: Default user profile cleaned."
 
 #endregion Phase 4 - Clean Default User Profile
 

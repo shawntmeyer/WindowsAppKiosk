@@ -7,6 +7,8 @@ This repository contains a **customized kiosk solution** for Azure Virtual Deskt
 > [!NOTE]
 > This is a **custom version** tailored to specific deployment needs. Many configuration options have been streamlined to focus on a particular use case.
 
+**Modern Architecture:** This solution uses **Shell Launcher v2** to replace the Windows shell entirely with Microsoft Edge in kiosk mode. This modern approach provides native support for Universal Windows Platform (UWP) applications like Windows App and reliable protocol handlers (ms-avd://, ms-cloudpc://), which were not possible with legacy GPO-driven shell replacement methods. For a comprehensive technical comparison and security analysis, see the [Architecture and Security Guide](ARCHITECTURE.md).
+
 ## 🎯 Solution Overview
 
 This solution configures Microsoft Edge in kiosk mode as the Windows shell, replacing the traditional Explorer interface with a locked-down browser experience that provides access to Azure Virtual Desktop and Windows 365 resources.
@@ -82,6 +84,7 @@ This solution configures Microsoft Edge in kiosk mode as the Windows shell, repl
 
 - **[Solution Overview](SOLUTION_OVERVIEW.md)** - Architecture, how it works, and key concepts
 - **[Implementation Guide](IMPLEMENTATION.md)** - Complete parameter reference, installation steps, and troubleshooting
+- **[Architecture and Security Guide](ARCHITECTURE.md)** - Technical deep-dive comparing legacy GPO-driven kiosk vs. modern Shell Launcher, security architecture, threat model, and migration guidance (for IT professionals and security evaluators)
 
 ## 🔧 Configuration Options
 
@@ -135,6 +138,22 @@ Modify the default HTML file located at:
 > - The script **must be run with SYSTEM privileges** (use PSExec or similar)
 > - A **system restart is required** after installation to activate kiosk mode
 > - Use **emergency access** (hold LEFT SHIFT + press ENTER during boot) if you need to break out of kiosk mode
+
+> [!WARNING]
+> **Password Policy Requirements for S4U Autologon**
+>
+> The modern Shell Launcher configuration uses **S4U (Service-for-User) passwordless autologon** for the KioskUser0 account. This is MORE SECURE than legacy approaches because no password is stored anywhere on the system.
+>
+> **CRITICAL:** The following Local Security Policy settings can **break S4U autologon** and MUST be configured as follows:
+> - **Password complexity requirements:** DISABLED (allows blank passwords)
+> - **Minimum password length:** 0 characters (allows blank passwords)  
+> - **Maximum password age:** 99999 days or 0/never expires
+> - **Account lockout threshold:** 0 (disabled)
+>
+> The installation script automatically configures these settings. However, **domain-joined systems** may have Group Policies that override local settings. If autologon fails after installation:
+> 1. Check domain GPOs with: `gpresult /h C:\temp\gpreport.html`
+> 2. Work with your domain administrator to create GPO exemptions for kiosk devices
+> 3. See [ARCHITECTURE.md](ARCHITECTURE.md#️-critical-group-policy-settings-that-break-s4u-autologon) for detailed troubleshooting
 
 > [!TIP]
 >

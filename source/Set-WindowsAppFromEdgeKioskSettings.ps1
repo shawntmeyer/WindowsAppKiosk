@@ -420,9 +420,26 @@ Set-AssignedAccessShellLauncher -FilePath $XmlFile
 If (Get-AssignedAccessShellLauncher) {
     [xml]$Xml = Get-Content -Path $XmlFile
     Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 53 -Message "Shell Launcher configuration successfully applied."
+    
+    # Validate that KioskUser0 account was created (may not exist until after reboot)
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 54 -Message "Checking for KioskUser0 account creation..."
+    $KioskUser = Get-LocalUser -Name 'KioskUser0' -ErrorAction SilentlyContinue
+    
+    If ($KioskUser) {
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 55 -Message "SUCCESS: KioskUser0 account exists. S4U autologon should function after reboot."
+        
+        # Check if account has a password set (it shouldn't for S4U)
+        $UserInfo = Get-CimInstance -ClassName Win32_UserAccount -Filter "Name='KioskUser0' AND LocalAccount=TRUE"
+        If ($UserInfo.PasswordRequired) {
+            Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 56 -Message "WARNING: KioskUser0 account has PasswordRequired=True. This may indicate password policy enforcement that could interfere with S4U autologon. After reboot, if autologon fails, verify Local Security Policy password settings (complexity=disabled, min length=0)."
+        }
+    }
+    Else {
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 57 -Message "KioskUser0 account not found yet. This is normal - the account will be created by Shell Launcher on first reboot. If account is NOT created after reboot, check: 1) Local Security Policy password settings (secedit /export /cfg C:\temp\policy.inf), 2) Domain GPO conflicts (gpresult /h C:\temp\gp.html), 3) Event Viewer for Shell Launcher errors."
+    }
 }
 Else {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Error -EventId 54 -Message "Shell Launcher configuration failed. Computer should be restarted first."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Error -EventId 58 -Message "Shell Launcher configuration failed. Computer should be restarted first."
     Exit 1618
 }
 
@@ -546,6 +563,49 @@ Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -
 $null = cmd /c lgpo.exe /t "$DirGPO\DisablePasswordForUnlock.txt" '2>&1'
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 84 -Message "Disabled password requirement for screen saver lock and wake from sleep via Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
 
+# Configure password policies for S4U autologon compatibility
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 87 -Message "Configuring Local Security Policy to support S4U passwordless autologon."
+
+$SecurityTemplateFile = Join-Path -Path $DirGPO -ChildPath 'S4U-PasswordPolicies.inf'
+$SecurityDatabase = Join-Path -Path "$env:SystemRoot\security\database" -ChildPath 'S4U.sdb'
+
+If (Test-Path -Path $SecurityTemplateFile) {
+    # Export current policy to check for potential conflicts
+    $TempExportFile = Join-Path -Path $env:TEMP -ChildPath 'current_policy.inf'
+    $null = secedit /export /cfg $TempExportFile /quiet
+    
+    # Check if password complexity or minimum length is currently enforced
+    $CurrentPolicy = Get-Content -Path $TempExportFile -ErrorAction SilentlyContinue
+    $PasswordComplexityEnabled = $CurrentPolicy -match "PasswordComplexity\s*=\s*1"
+    $MinPasswordLengthNonZero = $CurrentPolicy -match "MinimumPasswordLength\s*=\s*[1-9]"
+    
+    If ($PasswordComplexityEnabled -or $MinPasswordLengthNonZero) {
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 88 -Message "WARNING: Current system has password complexity or minimum length requirements enabled. These will be overridden for local policy to support S4U autologon. Domain GPOs may still enforce these policies and could prevent KioskUser0 account creation."
+    }
+    
+    # Apply S4U-compatible password policies
+    $SecEditResult = secedit /configure /db $SecurityDatabase /cfg $SecurityTemplateFile /overwrite /quiet
+    
+    If ($LASTEXITCODE -eq 0) {
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 89 -Message "Successfully configured Local Security Policy for S4U autologon (password complexity=disabled, min length=0, max age=never expires, no lockout).`nsecedit Exit Code: [$LASTEXITCODE]"
+    }
+    Else {
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 90 -Message "Failed to apply S4U password policy template. Manual configuration may be required.`nsecedit Exit Code: [$LASTEXITCODE]"
+    }
+    
+    # Check for domain membership and warn about potential GPO conflicts
+    $ComputerSystem = Get-WmiObject -Class Win32_ComputerSystem
+    If ($ComputerSystem.PartOfDomain) {
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 91 -Message "WARNING: This system is domain-joined. Domain Group Policies for password complexity, length, or account lockout may override local settings and prevent S4U autologon. If KioskUser0 account fails to auto-login, work with your domain administrator to create a GPO exemption for kiosk devices or the KioskUser0 account."
+    }
+    
+    # Clean up temp file
+    Remove-Item -Path $TempExportFile -Force -ErrorAction SilentlyContinue
+}
+Else {
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 92 -Message "S4U-PasswordPolicies.inf template file not found at: $SecurityTemplateFile. Password policies may not be configured correctly for S4U autologon."
+}
+
 If ($ConfigureAutomaticMaintenance) {
     # Configure Automatic Maintenance settings via Local Group Policy
     $sourceFile = Join-Path -Path $DirGPO -ChildPath 'AutomaticMaintenance.txt'
@@ -586,6 +646,73 @@ If ($SetPowerPolicies) {
     Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 86 -Message "Configured Power Settings with idle sleep timeout = $IdleSleepTimeoutMinutes minutes via Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
     Remove-Item -Path $outFile -Force -ErrorAction SilentlyContinue
 }
+
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 120 -Message "Configuring Non-Administrators Group Policy logon/logoff scripts."
+
+# Get the SID for the BUILTIN\Users group (Non-Administrators)
+$UsersGroup = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-32-545")
+$UsersSID = $UsersGroup.Value
+
+# Create Group Policy Users folder structure for Non-Administrators
+$GPUsersBase = "$env:SystemRoot\System32\GroupPolicyUsers\$UsersSID"
+$GPUserScripts = "$GPUsersBase\User\Scripts"
+$GPUserLogonScripts = "$GPUserScripts\Logon"
+$GPUserLogoffScripts = "$GPUserScripts\Logoff"
+
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 121 -Message "Creating Group Policy folder structure for Non-Administrators at: $GPUsersBase"
+
+# Create directories if they don't exist
+@($GPUsersBase, "$GPUsersBase\User", $GPUserScripts, $GPUserLogonScripts, $GPUserLogoffScripts) | ForEach-Object {
+    If (-not (Test-Path -Path $_)) {
+        New-Item -Path $_ -ItemType Directory -Force | Out-Null
+    }
+}
+
+# Create the logon script batch file to launch LocalUserlogoff.vbs
+$LogonScriptName = "LaunchCitrixConnectionMonitor.bat"
+$LogonScriptPath = Join-Path -Path $GPUserLogonScripts -ChildPath $LogonScriptName
+$LogonScriptContent = @"
+@echo off
+REM Launch user logoff monitoring script
+cscript.exe //B //Nologo "C:\Program Files\Kiosk Portal\LocalUserlogoff.vbs"
+exit /b 0
+"@
+
+Set-Content -Path $LogonScriptPath -Value $LogonScriptContent -Encoding ASCII -Force
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 122 -Message "Created logon script at: $LogonScriptPath"
+
+# Create the logoff script batch file for certificate cleanup
+$LogoffScriptName = "ClearCertificates.bat"
+$LogoffScriptPath = Join-Path -Path $GPUserLogoffScripts -ChildPath $LogoffScriptName
+$LogoffScriptContent = @"
+@echo off
+REM Certificate cleanup script for Non-Administrators
+certutil.exe -user -delstore MY *.* >nul 2>&1
+exit /b 0
+"@
+
+Set-Content -Path $LogoffScriptPath -Value $LogoffScriptContent -Encoding ASCII -Force
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 123 -Message "Created logoff script at: $LogoffScriptPath"
+
+# Create scripts.ini file with both logon and logoff scripts
+$ScriptsIniPath = Join-Path -Path $GPUserScripts -ChildPath "scripts.ini"
+$ScriptsIniContent = @"
+[Logon]
+0CmdLine=$LogonScriptName
+0Parameters=
+
+[Logoff]
+0CmdLine=$LogoffScriptName
+0Parameters=
+"@
+
+Set-Content -Path $ScriptsIniPath -Value $ScriptsIniContent -Encoding Unicode -Force
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 124 -Message "Created scripts.ini at: $ScriptsIniPath"
+
+# Force Group Policy update to apply the logon/logoff scripts
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 125 -Message "Forcing Group Policy update to apply logon/logoff script configuration."
+$GPUpdateResult = Start-Process -FilePath 'gpupdate.exe' -ArgumentList '/force' -Wait -PassThru -NoNewWindow
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 126 -Message "Group Policy update completed with exit code: $($GPUpdateResult.ExitCode)"
 
 #endregion Local GPO Settings
 
@@ -658,7 +785,6 @@ Switch ($WindowsAppAutoLogoffConfig) {
         }     
     }
 }
-
 
 # create the reg key restore file if it doesn't exist, else load it to compare for appending new rows.
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 91 -Message "Creating a Registry key restore file for Kiosk Mode uninstall."
@@ -745,8 +871,6 @@ Else {
 Set-AppLockerPolicy -XmlPolicy $FileAppLockerKiosk
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 111 -Message "Enabling and Starting Application Identity Service"
 Set-Service -Name AppIDSvc -StartupType Automatic -ErrorAction SilentlyContinue
-
-
 #endregion AppLocker Configuration
 
 #region Keyboard Filter
@@ -758,11 +882,11 @@ If (-not (Test-Path -Path $SchedTasksScriptsDir)) {
 $TaskScriptName = 'Set-KeyboardFilterConfiguration.ps1'
 Copy-Item -Path (Join-Path -Path $DirSchedTasksScripts -ChildPath $TaskScriptName) -Destination $SchedTasksScriptsDir -Force
 $TaskScriptFullName = Join-Path -Path $SchedTasksScriptsDir -ChildPath $TaskScriptName
-Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventID 120 -Message "Enabling Keyboard filter."
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventID 127 -Message "Enabling Keyboard filter."
 Enable-WindowsOptionalFeature -Online -FeatureName Client-KeyboardFilter -All -NoRestart
 # Configure Keyboard Filter after reboot
 $TaskName = "Windows-App-Kiosk - Configure Keyboard Filter"
-Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 121 -Message "Creating Scheduled Task: '$TaskName'."
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 128 -Message "Creating Scheduled Task: '$TaskName'."
 $TaskScriptEventSource = 'Keyboard Filter Configuration'
 $TaskDescription = "Configures the Keyboard Filter"
 New-EventLog -LogName $EventLog -Source $TaskScriptEventSource -ErrorAction SilentlyContinue     
@@ -773,13 +897,12 @@ $TaskPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceA
 $TaskSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -MultipleInstances IgnoreNew -AllowStartIfOnBatteries
 Register-ScheduledTask -TaskName $TaskName -Description $TaskDescription -Action $TaskAction -Settings $TaskSettings -Principal $TaskPrincipal -Trigger $TaskTrigger
 If (Get-ScheduledTask | Where-Object { $_.TaskName -eq "$TaskName" }) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 122 -Message "Scheduled Task created successfully."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 129 -Message "Scheduled Task created successfully."
 }
 Else {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Error -EventId 123 -Message "Scheduled Task not created."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Error -EventId 130 -Message "Scheduled Task not created."
     Exit 1618
 }
-
 
 #endregion Keyboard Filter
 

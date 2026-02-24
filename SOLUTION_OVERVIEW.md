@@ -1,6 +1,6 @@
 # Edge-Based Windows App Kiosk - Solution Overview
 
-**Navigation:** [🏠 Overview](README.md) | 🏗️ Solution Overview | [⚙️ Implementation Guide](IMPLEMENTATION.md)
+**Navigation:** [🏠 Overview](README.md) | 🏗️ Solution Overview | [⚙️ Implementation Guide](IMPLEMENTATION.md) | [🔒 Architecture Guide](ARCHITECTURE.md)
 
 ---
 

@@ -1,6 +1,6 @@
 # Edge-Based Windows App Kiosk - Implementation Guide
 
-**Navigation:** [🏠 Overview](README.md) | [🏗️ Solution Overview](SOLUTION_OVERVIEW.md) | ⚙️ Implementation Guide
+**Navigation:** [🏠 Overview](README.md) | [🏗️ Solution Overview](SOLUTION_OVERVIEW.md) | ⚙️ Implementation Guide | [🔒 Architecture Guide](ARCHITECTURE.md)
 
 ---
 
@@ -415,6 +415,82 @@ Restart-Computer -Force
    ```powershell
    .\Set-WindowsAppFromEdgeKioskSettings.ps1 -InstallWindowsApp -RemoveExistingSettings -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOnly'
    ```
+
+**Problem: Automatic logon fails / KioskUser0 doesn't auto-login after reboot**
+
+**Symptoms:** System boots to normal login screen instead of automatic KioskUser0 login, or KioskUser0 account not created
+
+**Root Cause:** Group Policy password complexity or minimum length requirements prevent S4U autologon from functioning. The KioskUser0 account requires NO PASSWORD for S4U to work correctly.
+
+**Solutions:**
+
+1. **Check if KioskUser0 account exists:**
+   ```powershell
+   Get-LocalUser -Name KioskUser0
+   ```
+   
+2. **Verify Local Security Policy password settings:**
+   ```powershell
+   # Export current policy
+   secedit /export /cfg C:\temp\current_policy.inf
+   
+   # Check critical settings
+   Get-Content C:\temp\current_policy.inf | Select-String "PasswordComplexity|MinimumPasswordLength|MaximumPasswordAge|LockoutBadCount"
+   ```
+   
+   **Required values for S4U:**
+   - `PasswordComplexity = 0` (complexity disabled)
+   - `MinimumPasswordLength = 0` (blank passwords allowed)
+   - `MaximumPasswordAge = 99999 or -1` (never expires)
+   - `LockoutBadCount = 0` (lockout disabled)
+
+3. **Re-apply S4U password policies:**
+   ```powershell
+   # Re-run configuration with password policy fix
+   cd C:\path\to\source\GPOs
+   secedit /configure /db C:\Windows\security\database\S4U.sdb /cfg "S4U-PasswordPolicies.inf" /overwrite
+   gpupdate /force
+   Restart-Computer
+   ```
+
+4. **Check for domain GPO conflicts (domain-joined systems):**
+   ```powershell
+   # Generate Group Policy results report
+   gpresult /h C:\temp\gpreport.html
+   
+   # Open report and check Computer Configuration > Windows Settings > Security Settings > Account Policies > Password Policy
+   # Look for "Winning GPO" - if it's a domain GPO, that's your issue
+   ```
+   
+   **Domain GPO Override Solutions:**
+   - Contact your domain administrator to create a separate OU for kiosk devices
+   - Request GPO exemption or WMI filtering to exclude kiosk machines from password policies
+   - Apply a kiosk-specific GPO with password complexity disabled that has higher precedence
+
+5. **Check Shell Launcher status:**
+   ```powershell
+   # Verify Shell Launcher configuration exists
+   Get-AssignedAccessShellLauncher
+   
+   # Check Shell Launcher event logs
+   Get-WinEvent -LogName Microsoft-Windows-AssignedAccess/Admin -MaxEvents 20
+   ```
+
+6. **Manual KioskUser0 account fix (if account exists but won't auto-login):**
+   ```powershell
+   # Remove password requirement
+   $User = [ADSI]"WinNT://./KioskUser0,user"
+   $User.SetPassword("")
+   $User.SetInfo()
+   
+   # Verify account settings
+   Get-LocalUser -Name KioskUser0 | Select-Object Name, Enabled, PasswordRequired, PasswordLastSet
+   ```
+
+> [!WARNING]
+> **For domain-joined systems:** Domain Group Policies override local policies. If the winning GPO for password complexity/length is from the domain, local configuration changes will have NO EFFECT. You MUST work with your domain administrator to resolve this.
+
+**Related Documentation:** See [ARCHITECTURE.md - Group Policy Settings That Break S4U Autologon](ARCHITECTURE.md#️-critical-group-policy-settings-that-break-s4u-autologon) for detailed technical explanation.
 
 **Problem: Keyboard is completely unresponsive**
 
