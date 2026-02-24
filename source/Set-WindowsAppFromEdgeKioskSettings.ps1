@@ -100,7 +100,7 @@ param (
     [ValidateSet('Disabled', 'ResetAppOnCloseOnly', 'ResetAppAfterConnection', 'ResetAppOnCloseOrIdle')]
     [string]$WindowsAppAutoLogoffConfig,
     
-    [int]$WindowsAppAutoLogoffTimeInterval = 15,
+    [int]$WindowsAppAutoLogoffTimeInterval = 60,
 
     [Parameter()]
     [switch]$ConfigureAutomaticMaintenance,
@@ -131,7 +131,7 @@ param (
 
     [Parameter()]
     [ValidateNotNullOrEmpty()]
-    [string]$KioskUrl = 'file:///c:/kiosksettings/Index.html',
+    [string]$KioskUrl = 'file:///c:/kiosksettings/index.html',
 
     [Parameter()]
     [ValidateNotNullOrEmpty()]
@@ -392,9 +392,9 @@ Update-ACLInheritance -Path $DirKiosk -DisableInheritance $true -PreserveInherit
 #endregion KioskSettings Directory
 
 # Copy Website file only if using the default local file URL
-If ($KioskUrl -eq 'file:///c:/kiosksettings/Index.html') {
+If ($KioskUrl -eq 'file:///c:/kiosksettings/index.html') {
     Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 42 -Message "Copying Website file to KioskSettings Directory."
-    Copy-Item -Path (Join-Path -Path $DirShellLauncherSettings -childPath 'windowsapp.html') -Destination "$DirKiosk\Index.html" -Force
+    Copy-Item -Path (Join-Path -Path $DirShellLauncherSettings -childPath 'index.html') -Destination "$DirKiosk\index.html" -Force
 }
 Else {
     Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 43 -Message "Using custom URL '$KioskUrl' for kiosk mode. Local HTML file will not be created."
