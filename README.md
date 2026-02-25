@@ -68,7 +68,7 @@ This solution configures Microsoft Edge in kiosk mode as the Windows shell, repl
     -InstallWindowsApp `
     -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOrIdle' `
     -WindowsAppAutoLogoffTimeInterval 15 `
-    -KioskUrl 'file:///c:/kiosksettings/Index.html'
+    -KioskUrl 'file:///c:/kiosksettings/index.html'
 ```
 
 ### With Custom Web Portal
@@ -140,28 +140,32 @@ Modify the default HTML file located at:
 > - Use **emergency access** (hold LEFT SHIFT + press ENTER during boot) if you need to break out of kiosk mode
 
 > [!WARNING]
-> **Group Policy Settings That Break Assigned Access Autologon**
+> **Settings that Break Assigned Access Autologon**
 >
 > The modern Shell Launcher configuration uses **Assigned Access autologon** for the KioskUser0 account. Windows automatically generates a random, highly complex password and stores it in LSA secrets (encrypted storage). [Microsoft documentation](https://learn.microsoft.com/en-us/windows/win32/secauthn/protecting-the-automatic-logon-password)
 >
 > **VERIFIED:** Only the following settings **actually break** Assigned Access autologon:
 > 
 > ❌ **Interactive logon legal notices** (LegalNoticeText/LegalNoticeCaption)
+>
 > - Forces interactive acknowledgment before logon
 > - **BREAKS autologon completely**
 > - Solution: Disable for kiosk devices or display within kiosk app
-> 
+>
 > ❌ **Machine inactivity timeout** (InactivityTimeoutSecs)
+>
 > - Can interrupt kiosk sessions and require re-authentication
 > - Solution: Set to 0 (disabled) or very high value for kiosk devices
 >
 > **✅ Password policies DO NOT break autologon:**
+>
 > - Password complexity requirements - ✅ Works fine
 > - Minimum password length (including STIG ≥14 chars) - ✅ Works fine
 > - Maximum password age (including STIG ≤60 days) - ✅ Works fine
 > - Account lockout threshold - ✅ Works fine
 >
 > For **domain-joined systems** with STIG compliance requirements:
+>
 > 1. Create kiosk-specific OU with GPO exemptions for legal notices and inactivity timeout
 > 2. ALL password STIG policies can be applied (they don't affect autologon)
 > 3. Display legal notice within kiosk application as compensating control

@@ -734,7 +734,6 @@ If ($OneDrivePresent) {
     }
 }
 
-
 if ($WindowsAppAutoLogoffConfig -ne 'Disabled') {
     # Streamline the user experience by disabling First Run Experience
     # https://learn.microsoft.com/en-us/windows-app/windowsautologoff#skipfre

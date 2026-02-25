@@ -607,6 +607,7 @@ start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --kiosk 
 <summary>Expand to see complete list of legacy GPO settings (most are dead weight)</summary>
 
 **Start Menu and Taskbar (40+ settings) - NO EFFECT (no Explorer running):**
+
 - Remove Run menu from Start Menu
 - Remove Taskbar properties from Start Menu and taskbar
 - Remove common program groups from Start menu
@@ -629,6 +630,7 @@ start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --kiosk 
 - Turn off all balloon notifications
 
 **Desktop (15+ settings) - NO EFFECT (no Explorer/desktop):**
+
 - Hide and disable all items on the desktop
 - Prohibit user from changing My Documents path
 - Remove Computer icon on the desktop
@@ -641,6 +643,7 @@ start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --kiosk 
 - Prevent access to drives from My Computer
 
 **Windows Components (20+ settings) - MIXED (some effective, most not):**
+
 - Remove File Explorer access (NO EFFECT - can't launch without Explorer) (NO EFFECT - can't launch without Explorer)
 - Remove Windows Settings access (NO EFFECT - can't launch without Explorer)
 - Disable Windows Settings app (NO EFFECT - can't launch without Explorer)
@@ -660,6 +663,7 @@ start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --kiosk 
 - Turn off Store application (NO EFFECT - can't launch without Explorer)
 
 **System (10+ settings) - NO EFFECT (can't launch Control Panel/cmd without Explorer):**
+
 - Prevent access to Control Panel and PC settings
 - Prohibit access to Control Panel and PC settings
 - Hide specified Control Panel items
@@ -670,12 +674,14 @@ start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --kiosk 
 - Remove Task Manager from Ctrl+Alt+Del
 
 **Network (5+ settings) - NO EFFECT (can't access Network settings without Explorer):**
+
 - Prohibit use of Internet Connection Sharing
 - Prohibit access to properties of a LAN connection
 - Ability to change properties of an all user remote access connection
 - Ability to rename all user remote access connections
 
 **Other (10+ settings) - VARIED (some may have effect):**
+
 - Multiple PowerShell execution policy settings (NO EFFECT - can't launch without Explorer)
 - Privacy settings (telemetry, advertising ID, etc.) (POSSIBLE EFFECT - system-level)
 - Windows Update settings (POSSIBLE EFFECT - system-level)
@@ -683,6 +689,7 @@ start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --kiosk 
 - Privacy experience settings (POSSIBLE EFFECT - system-level)
 
 **Summary:** Out of 100+ legacy GPO settings:
+
 - **5 settings are EFFECTIVE** (Ctrl+Alt+Del restrictions)
 - **~15 settings POSSIBLY have effect** (system-level settings)
 - **~80 settings have NO EFFECT** (Explorer/Start/Taskbar/Desktop restrictions when Explorer isn't running)
@@ -758,7 +765,7 @@ The modern kiosk architecture implements a layered security model where each com
 └────────────────────────────────────────────────────────────────┘
                               ↓
 ┌────────────────────────────────────────────────────────────────┐
-│              Security Layer 2: Application Control             │
+│             Security Layer 2: Application Control              │
 │  AppLocker enforces application allowlist                      │
 │  - Windows App: Allowed                                        │
 │  - Edge: Allowed                                               │
@@ -766,7 +773,7 @@ The modern kiosk architecture implements a layered security model where each com
 └────────────────────────────────────────────────────────────────┘
                               ↓
 ┌────────────────────────────────────────────────────────────────┐
-│              Security Layer 3: Network Access Control          │
+│            Security Layer 3: Network Access Control            │
 │  Edge URL Filtering restricts browsing                         │
 │  - URLBlocklist: * (block all by default)                      │
 │  - URLAllowlist: Specific URLs only                            │
@@ -979,6 +986,7 @@ The following settings were previously thought to break autologon but have been 
 **Why Password Policies Don't Break Assigned Access Autologon:**
 
 Assigned Access autologon stores the password in LSA secrets, and Windows automatically manages it. The password is automatically generated as a highly complex password (random, long, complex). Therefore:
+
 - Password complexity requirements can be enforced without affecting autologon
 - Minimum password length requirements (including STIG V-253303: ≥14 chars) don't break autologon
 - Maximum password age requirements (including STIG V-253301: ≤60 days) don't break autologon
@@ -1022,22 +1030,26 @@ $autologonBlockers
 If Assigned Access autologon fails after configuration:
 
 1. **Check for legal notice or inactivity timeout (these break autologon):**
+
    ```powershell
    Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" | Select-Object LegalNoticeText, LegalNoticeCaption, InactivityTimeoutSecs
    ```
 
 2. **Verify KioskUser0 account exists:**
+
    ```powershell
    Get-LocalUser -Name KioskUser0
    ```
 
 3. **Check Event Logs:**
+
    ```powershell
    Get-WinEvent -LogName System | Where-Object {$_.Id -eq 7000 -or $_.Id -eq 7001} | Select-Object -First 10
    Get-WinEvent -LogName Microsoft-Windows-AssignedAccess/Admin | Select-Object -First 10
    ```
 
 4. **Check for Group Policy conflicts:**
+
    - Domain GPOs may override local policies
    - Use `gpresult /h C:\temp\gpreport.html` to identify conflicting policies
    - Look specifically for: LegalNoticeText, LegalNoticeCaption, InactivityTimeoutSecs
