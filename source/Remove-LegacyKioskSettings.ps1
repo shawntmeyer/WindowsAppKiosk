@@ -46,7 +46,6 @@ param (
 $script:FullName = $MyInvocation.MyCommand.Path
 $script:Dir = Split-Path $script:FullName
 $DirFunctions = Join-Path -Path $Script:Dir -ChildPath "Scripts\Functions"
-$DirKiosk = Join-Path -Path $env:SystemDrive -ChildPath "KioskSettings"
 
 #endregion Set Variables
 
@@ -188,7 +187,17 @@ If (Test-Path -Path $AutologonRegPath) {
     }
 }
 
-Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 25 -EntryType Information -Message "Phase 1 completed: Machine-level settings cleaned."
+# Remove DefaultPassword from LSA Secrets (if it exists)
+Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 24 -EntryType Information -Message "Removing DefaultPassword from LSA secrets (if it exists)."
+Try {
+    Remove-DefaultPasswordFromLSASecrets
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 25 -EntryType Information -Message "LSA secrets cleanup completed successfully."
+}
+Catch {
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 26 -EntryType Warning -Message "Failed to remove DefaultPassword from LSA secrets: $_"
+}
+
+Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 30 -EntryType Information -Message "Phase 1 completed: Machine-level settings cleaned."
 
 #endregion Phase 1 - Machine-Level Settings Cleanup
 

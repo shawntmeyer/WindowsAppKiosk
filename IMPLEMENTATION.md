@@ -79,7 +79,7 @@ Some parameters have dependencies or requirements:
 ## Manual Installation
 
 > [!IMPORTANT]
-> The PowerShell script **must be run with SYSTEM privileges** to properly configure all kiosk components. The easiest method is using [PSExec](https://learn.microsoft.com/en-us/sysinternals/downloads/psexec) from Sysinternals.
+> The PowerShell script **must be run with SYSTEM privileges** to properly configure all kiosk components. The easiest method is using [psexec64](https://learn.microsoft.com/en-us/sysinternals/downloads/psexec) from Sysinternals.
 
 ### Step-by-Step Installation
 
@@ -87,10 +87,10 @@ Some parameters have dependencies or requirements:
 
 Either clone the repository or download as a ZIP file. If downloading as ZIP, extract to a new folder (e.g., `C:\KioskInstall`).
 
-**2. Download PSExec**
+**2. Download psexec64**
 
 - Download PSExec from [Microsoft Sysinternals](https://learn.microsoft.com/en-us/sysinternals/downloads/psexec)
-- Extract `psexec64.exe` to any folder
+- Extract `psexec64.exe` to any folder (the 64-bit version)
 - Open an **elevated Command Prompt** (Run as Administrator)
 
 **3. Launch PowerShell as SYSTEM**
@@ -280,7 +280,7 @@ To completely remove the kiosk configuration and restore the system to its origi
 
 ### Using the Removal Script
 
-**Step 1:** Launch PowerShell as SYSTEM (using PSExec):
+**Step 1:** Launch PowerShell as SYSTEM (using psexec64):
 
 ```cmd
 psexec64 -s -i powershell

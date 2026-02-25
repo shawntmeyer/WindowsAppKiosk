@@ -35,12 +35,18 @@
     Last Modified: 02/19/2026
     Version: 2026.02.19.1
     
+    IMPORTANT: This script MUST be run with SYSTEM privileges for proper operation. 
+    Use psexec64 (https://learn.microsoft.com/en-us/sysinternals/downloads/psexec) or similar tools.
+    See the Implementation Guide for detailed instructions.
+    
     This is a custom version of the Windows App kiosk solution tailored to specific customer requirements. 
     The configuration has been streamlined to focus on a particular deployment scenario: an auto-logon 
     Edge kiosk that launches Windows App connections.
     
     The script can optionally remove legacy configurations and existing kiosk settings using the 
     -RemoveLegacySettings and -RemoveExistingSettings parameters respectively.
+    
+    A system restart is required after installation to activate kiosk mode.
 
 .PARAMETER InstallWindowsApp
 This switch parameter determines if the latest Windows App is automatically downloaded from the Internet and installed on the system prior to configuration. Supports both online (automatic download) and offline (local MSIX file) installation. When a local MSIX file is present in the Apps\WindowsApp directory, no internet connection is required and the local file will be used instead. For detailed offline installation instructions, see Apps\WindowsApp\README.md.
@@ -87,6 +93,46 @@ This switch parameter removes existing Windows App kiosk settings before applyin
 
 .PARAMETER Version
 This version parameter allows tracking of the installed version using configuration management software such as Microsoft Endpoint Manager or Microsoft Endpoint Configuration Manager by querying the value of the registry value: HKLM\Software\Kiosk\version.
+
+.EXAMPLE
+First, launch PowerShell with SYSTEM privileges using psexec64:
+    
+    psexec64 -s -i powershell
+
+Then run the script with basic configuration:
+
+    .\Set-WindowsAppFromEdgeKioskSettings.ps1 `
+        -InstallWindowsApp `
+        -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOrIdle' `
+        -WindowsAppAutoLogoffTimeInterval 15 `
+        -KioskUrl 'file:///c:/kiosksettings/index.html'
+
+Installs Windows App, configures auto-logoff on idle/close, and uses the default local HTML file.
+
+.EXAMPLE
+    # Launch PowerShell with SYSTEM privileges first (psexec64 -s -i powershell)
+    
+    .\Set-WindowsAppFromEdgeKioskSettings.ps1 `
+        -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOrIdle' `
+        -WindowsAppAutoLogoffTimeInterval 10 `
+        -KioskUrl 'https://portal.tailspintoys.com/kiosk' `
+        -AllowedUrls @('tailspintoys.com')
+
+Configures kiosk with a custom web portal URL and allows navigation to tailspintoys.com domain.
+
+.EXAMPLE
+    # Launch PowerShell with SYSTEM privileges first (psexec64 -s -i powershell)
+    
+    .\Set-WindowsAppFromEdgeKioskSettings.ps1 `
+        -InstallWindowsApp `
+        -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOrIdle' `
+        -WindowsAppAutoLogoffTimeInterval 15 `
+        -SetPowerPolicies `
+        -IdleSleepTimeoutMinutes 60 `
+        -ConfigureAutomaticMaintenance `
+        -RemoveLegacySettings
+
+Full configuration with power management, automatic maintenance, and legacy settings cleanup.
 
 #>
 [CmdletBinding()]

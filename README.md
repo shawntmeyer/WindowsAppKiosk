@@ -63,7 +63,7 @@ This solution configures Microsoft Edge in kiosk mode as the Windows shell, repl
 ### Basic Installation Example
 
 ```powershell
-# Run with SYSTEM privileges (see documentation for PSExec instructions)
+# Run with SYSTEM privileges (see documentation for psexec64 instructions)
 .\Set-WindowsAppFromEdgeKioskSettings.ps1 `
     -InstallWindowsApp `
     -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOrIdle' `
@@ -135,7 +135,7 @@ Modify the default HTML file located at:
 > [!IMPORTANT]
 >
 > - This solution **requires Windows 10 (version 1903+) or Windows 11** with editions that support Shell Launcher
-> - The script **must be run with SYSTEM privileges** (use PSExec or similar)
+> - The script **must be run with SYSTEM privileges** (use psexec64 or similar)
 > - A **system restart is required** after installation to activate kiosk mode
 > - Use **emergency access** (hold LEFT SHIFT + press ENTER during boot) if you need to break out of kiosk mode
 

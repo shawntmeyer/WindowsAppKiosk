@@ -37,7 +37,7 @@ A currently supported version of **Windows 10** (version 1903 or later) or **Win
 
 2️⃣ **Administrative Access**
 
-The ability to run the installation script with **SYSTEM privileges**. The easiest method is using [PSExec](https://learn.microsoft.com/en-us/sysinternals/downloads/psexec). Instructions are provided in the [Implementation Guide](IMPLEMENTATION.md#manual-installation).
+The ability to run the installation script with **SYSTEM privileges**. The easiest method is using [psexec64](https://learn.microsoft.com/en-us/sysinternals/downloads/psexec) (64-bit version). Instructions are provided in the [Implementation Guide](IMPLEMENTATION.md#manual-installation).
 
 ### Optional
 
