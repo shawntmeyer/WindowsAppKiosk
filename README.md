@@ -140,20 +140,32 @@ Modify the default HTML file located at:
 > - Use **emergency access** (hold LEFT SHIFT + press ENTER during boot) if you need to break out of kiosk mode
 
 > [!WARNING]
-> **Password Policy Requirements for S4U Autologon**
+> **Group Policy Settings That Break Assigned Access Autologon**
 >
-> The modern Shell Launcher configuration uses **S4U (Service-for-User) passwordless autologon** for the KioskUser0 account. This is MORE SECURE than legacy approaches because no password is stored anywhere on the system.
+> The modern Shell Launcher configuration uses **Assigned Access autologon** for the KioskUser0 account. Windows automatically generates a random, highly complex password and stores it in LSA secrets (encrypted storage). [Microsoft documentation](https://learn.microsoft.com/en-us/windows/win32/secauthn/protecting-the-automatic-logon-password)
 >
-> **CRITICAL:** The following Local Security Policy settings can **break S4U autologon** and MUST be configured as follows:
-> - **Password complexity requirements:** DISABLED (allows blank passwords)
-> - **Minimum password length:** 0 characters (allows blank passwords)  
-> - **Maximum password age:** 99999 days or 0/never expires
-> - **Account lockout threshold:** 0 (disabled)
+> **VERIFIED:** Only the following settings **actually break** Assigned Access autologon:
+> 
+> ❌ **Interactive logon legal notices** (LegalNoticeText/LegalNoticeCaption)
+> - Forces interactive acknowledgment before logon
+> - **BREAKS autologon completely**
+> - Solution: Disable for kiosk devices or display within kiosk app
+> 
+> ❌ **Machine inactivity timeout** (InactivityTimeoutSecs)
+> - Can interrupt kiosk sessions and require re-authentication
+> - Solution: Set to 0 (disabled) or very high value for kiosk devices
 >
-> The installation script automatically configures these settings. However, **domain-joined systems** may have Group Policies that override local settings. If autologon fails after installation:
-> 1. Check domain GPOs with: `gpresult /h C:\temp\gpreport.html`
-> 2. Work with your domain administrator to create GPO exemptions for kiosk devices
-> 3. See [ARCHITECTURE.md](ARCHITECTURE.md#️-critical-group-policy-settings-that-break-s4u-autologon) for detailed troubleshooting
+> **✅ Password policies DO NOT break autologon:**
+> - Password complexity requirements - ✅ Works fine
+> - Minimum password length (including STIG ≥14 chars) - ✅ Works fine
+> - Maximum password age (including STIG ≤60 days) - ✅ Works fine
+> - Account lockout threshold - ✅ Works fine
+>
+> For **domain-joined systems** with STIG compliance requirements:
+> 1. Create kiosk-specific OU with GPO exemptions for legal notices and inactivity timeout
+> 2. ALL password STIG policies can be applied (they don't affect autologon)
+> 3. Display legal notice within kiosk application as compensating control
+> 4. See [STIG_AUTOLOGON_ANALYSIS.md](STIG_AUTOLOGON_ANALYSIS.md) for detailed analysis
 
 > [!TIP]
 >

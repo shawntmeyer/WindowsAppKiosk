@@ -58,10 +58,6 @@ For kiosk security, it is strongly recommended to use 'ResetAppOnCloseOrIdle' to
 This integer parameter determines the interval in minutes at which Windows App checks the Windows OS for inactivity. For example, if set to 5, the app will poll the OS for inactivity every 5 minutes and the logout process will initiate if the OS reports 5 or more minutes of inactivity. This parameter is required when WindowsAppAutoLogoffConfig is set to 'ResetAppOnCloseOrIdle'. Default value is 15 minutes
 This integer value determines the number of minutes of idle time before the user is automatically logged off. This parameter is only valid when the AutoLogonKiosk switch parameter is not used. When used with other idle timeout parameters, this must be at least 15 minutes greater than IdleLockTimeoutMinutes and at least 15 minutes less than IdleSleepTimeoutMinutes.
 
-.PARAMETER SmartCardRemovalAction   
-This string parameter determines what occurs when the smart card that was used to authenticate to the operating system is removed from the system. The possible values are 'Lock' or 'Logoff'.
-When AutoLogon is true, this parameter cannot be used.
-
 .PARAMETER ConfigureAutomaticMaintenance
 This switch parameter determines if Windows automatic maintenance settings are configured via Local Group Policy. When enabled, maintenance tasks will run at the specified activation time with optional random delay.
 
@@ -426,12 +422,13 @@ If (Get-AssignedAccessShellLauncher) {
     $KioskUser = Get-LocalUser -Name 'KioskUser0' -ErrorAction SilentlyContinue
     
     If ($KioskUser) {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 55 -Message "SUCCESS: KioskUser0 account exists. S4U autologon should function after reboot."
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 55 -Message "SUCCESS: KioskUser0 account exists. Assigned Access autologon should function after reboot."
         
-        # Check if account has a password set (it shouldn't for S4U)
+        # Check if account has a password set (Assigned Access auto-generates one)
+        # Note: Windows automatically generates a random, highly complex password stored in LSA secrets
         $UserInfo = Get-CimInstance -ClassName Win32_UserAccount -Filter "Name='KioskUser0' AND LocalAccount=TRUE"
         If ($UserInfo.PasswordRequired) {
-            Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 56 -Message "WARNING: KioskUser0 account has PasswordRequired=True. This may indicate password policy enforcement that could interfere with S4U autologon. After reboot, if autologon fails, verify Local Security Policy password settings (complexity=disabled, min length=0)."
+            Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 56 -Message "WARNING: KioskUser0 account has PasswordRequired=True. This is expected for Assigned Access autologon (Windows auto-generates a password). If autologon fails, verify that legal notices (LegalNoticeText/Caption) and InactivityTimeoutSecs are not configured."
         }
     }
     Else {
@@ -563,47 +560,43 @@ Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -
 $null = cmd /c lgpo.exe /t "$DirGPO\DisablePasswordForUnlock.txt" '2>&1'
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 84 -Message "Disabled password requirement for screen saver lock and wake from sleep via Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
 
-# Configure password policies for S4U autologon compatibility
-Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 87 -Message "Configuring Local Security Policy to support S4U passwordless autologon."
+# Check for Group Policy settings that actually break S4U autologon
+# NOTE: Password policies do NOT break S4U autologon (verified 2026-02-25)
+# S4U autologon stores password in LSA secrets and Windows manages it automatically
+# Reference: https://learn.microsoft.com/en-us/windows/win32/secauthn/protecting-the-automatic-logon-password
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 87 -Message "Checking for Group Policy settings that break S4U autologon (legal notices and inactivity timeout)."
 
-$SecurityTemplateFile = Join-Path -Path $DirGPO -ChildPath 'S4U-PasswordPolicies.inf'
-$SecurityDatabase = Join-Path -Path "$env:SystemRoot\security\database" -ChildPath 'S4U.sdb'
+# Check for legal notices (these BREAK autologon)
+$LegalNoticeText = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "LegalNoticeText" -ErrorAction SilentlyContinue
+$LegalNoticeCaption = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "LegalNoticeCaption" -ErrorAction SilentlyContinue
+$InactivityTimeout = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "InactivityTimeoutSecs" -ErrorAction SilentlyContinue
 
-If (Test-Path -Path $SecurityTemplateFile) {
-    # Export current policy to check for potential conflicts
-    $TempExportFile = Join-Path -Path $env:TEMP -ChildPath 'current_policy.inf'
-    $null = secedit /export /cfg $TempExportFile /quiet
-    
-    # Check if password complexity or minimum length is currently enforced
-    $CurrentPolicy = Get-Content -Path $TempExportFile -ErrorAction SilentlyContinue
-    $PasswordComplexityEnabled = $CurrentPolicy -match "PasswordComplexity\s*=\s*1"
-    $MinPasswordLengthNonZero = $CurrentPolicy -match "MinimumPasswordLength\s*=\s*[1-9]"
-    
-    If ($PasswordComplexityEnabled -or $MinPasswordLengthNonZero) {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 88 -Message "WARNING: Current system has password complexity or minimum length requirements enabled. These will be overridden for local policy to support S4U autologon. Domain GPOs may still enforce these policies and could prevent KioskUser0 account creation."
-    }
-    
-    # Apply S4U-compatible password policies
-    $SecEditResult = secedit /configure /db $SecurityDatabase /cfg $SecurityTemplateFile /overwrite /quiet
-    
-    If ($LASTEXITCODE -eq 0) {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 89 -Message "Successfully configured Local Security Policy for S4U autologon (password complexity=disabled, min length=0, max age=never expires, no lockout).`nsecedit Exit Code: [$LASTEXITCODE]"
-    }
-    Else {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 90 -Message "Failed to apply S4U password policy template. Manual configuration may be required.`nsecedit Exit Code: [$LASTEXITCODE]"
-    }
-    
-    # Check for domain membership and warn about potential GPO conflicts
-    $ComputerSystem = Get-WmiObject -Class Win32_ComputerSystem
-    If ($ComputerSystem.PartOfDomain) {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 91 -Message "WARNING: This system is domain-joined. Domain Group Policies for password complexity, length, or account lockout may override local settings and prevent S4U autologon. If KioskUser0 account fails to auto-login, work with your domain administrator to create a GPO exemption for kiosk devices or the KioskUser0 account."
-    }
-    
-    # Clean up temp file
-    Remove-Item -Path $TempExportFile -Force -ErrorAction SilentlyContinue
+$AutologonBlockers = @()
+
+If ($LegalNoticeText.LegalNoticeText -and $LegalNoticeText.LegalNoticeText.Length -gt 0) {
+    $AutologonBlockers += "LegalNoticeText (Interactive logon: Message text for users attempting to log on)"
+}
+
+If ($LegalNoticeCaption.LegalNoticeCaption -and $LegalNoticeCaption.LegalNoticeCaption.Length -gt 0) {
+    $AutologonBlockers += "LegalNoticeCaption (Interactive logon: Message title for users attempting to log on)"
+}
+
+If ($InactivityTimeout.InactivityTimeoutSecs -and $InactivityTimeout.InactivityTimeoutSecs -gt 0) {
+    $AutologonBlockers += "InactivityTimeoutSecs (Interactive logon: Machine inactivity limit) = $($InactivityTimeout.InactivityTimeoutSecs) seconds"
+}
+
+If ($AutologonBlockers.Count -gt 0) {
+    $BlockersList = $AutologonBlockers -join "; "
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 88 -Message "WARNING: The following Group Policy settings WILL BREAK Assigned Access autologon: $BlockersList. These settings require interactive user acknowledgment and prevent automatic sign-in. Create a GPO exemption for kiosk devices or set these values to empty/disabled. Reference: https://learn.microsoft.com/en-us/troubleshoot/windows-server/user-profiles-and-logon/turn-on-automatic-logon"
 }
 Else {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 92 -Message "S4U-PasswordPolicies.inf template file not found at: $SecurityTemplateFile. Password policies may not be configured correctly for S4U autologon."
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 89 -Message "No autologon-blocking Group Policy settings detected (legal notices and inactivity timeout are not configured)."
+}
+
+# Check for domain membership and warn about potential GPO conflicts
+$ComputerSystem = Get-WmiObject -Class Win32_ComputerSystem
+If ($ComputerSystem.PartOfDomain) {
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 91 -Message "This system is domain-joined. Domain Group Policies for legal notices (LegalNoticeText/LegalNoticeCaption) or machine inactivity timeout will prevent Assigned Access autologon. Password policies (complexity, length, age) are fully compatible with Assigned Access and do not need exemptions. Work with your domain administrator to create GPO exemptions for kiosk devices if autologon fails."
 }
 
 If ($ConfigureAutomaticMaintenance) {

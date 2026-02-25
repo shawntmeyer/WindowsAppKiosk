@@ -55,7 +55,7 @@
 | **Explorer Running** | ❌ Not running (replaced) | ❌ Not running (replaced) |
 | **Edge Command** | Similar `--kiosk --edge-kiosk-type=fullscreen` | Similar `--kiosk --edge-kiosk-type=fullscreen` |
 | **Windows App (UWP)** | ❌ Broken (protocol handlers fail silently) | ✅ Works (native UWP support) |
-| **Auto-Logon** | Registry-based (password required for 'wes10_user') | Shell Launcher S4U (passwordless - more secure) |
+| **Auto-Logon** | Registry-based (password in registry for 'wes10_user') | Assigned Access autologon (auto-generated password in encrypted LSA secrets) |
 | **GPO Settings in Non-Administrators** | 100+ settings (mostly dead weight) | 5 settings (Ctrl+Alt+Del only) |
 | **Maintenance** | High (unnecessary complexity) | Low (component-based) |
 
@@ -72,7 +72,7 @@
 5. **Session Management** - Auto-logoff + certificate cleanup on close/idle
 6. **GPO Lockdown** - Ctrl+Alt+Del restrictions (5 essential settings, removed 95+ dead weight)
 
-**Verdict:** ✅ Modern approach is **more secure** (passwordless S4U autologon vs. stored password) and **vastly simpler** (removed unnecessary complexity).
+**Verdict:** ✅ Modern approach is **more secure** (auto-generated password in encrypted LSA secrets vs. registry-stored password) and **vastly simpler** (removed unnecessary complexity).
 
 ### 📊 GPO Settings Reduction
 
@@ -112,7 +112,7 @@
 ### 🎓 Key Takeaways for Decision Makers
 
 ✅ **Technical Necessity** - GPO registry-based shell replacement breaks UWP protocol handlers (silent fail); Shell Launcher fixes this  
-✅ **Security Improvement** - Passwordless S4U autologon (no stored credentials) vs. registry-based autologon (password stored on disk)  
+✅ **Security Improvement** - Assigned Access autologon (auto-generated password in encrypted LSA secrets) vs. registry-based autologon (password stored in less-secure registry)  
 ✅ **Architectural Simplification** - Removes 95+ unnecessary GPO settings (dead weight with no effect)  
 ✅ **Maintenance Reduction** - 5 essential GPO settings vs. 100+ legacy bloat  
 ✅ **Equivalent User Experience** - Both replace Explorer with Edge in kiosk mode (same end result)  
@@ -331,8 +331,8 @@ The modern implementation leverages **Shell Launcher v2** (introduced in Windows
 │                                                                 │
 │  2. Automatic Logon                                             │
 │     - Assigned Access auto-logon configuration                  │
-│     - KioskUser0 account (no password required)                 │
-│     - S4U (Service-for-User) logon ticket                       │
+│     - KioskUser0 account (auto-generated complex password)      │
+│     - Assigned Access autologon (encrypted LSA secrets)         │
 │                                                                 │
 │  3. Shell Replacement with Edge                                 │
 │     Shell Launcher → msedge.exe (Single App Kiosk Mode)         │
@@ -428,7 +428,7 @@ C:\Windows\System32\GroupPolicyUsers\
    - Critical for Windows App functionality
 
 2. **Enhanced Autologon Security** (MAJOR SECURITY IMPROVEMENT)
-   - Modern: S4U (Service-for-User) passwordless autologon - **no credentials stored**
+   - Modern: Assigned Access autologon - **password stored in encrypted LSA secrets (auto-generated)**
    - Legacy: Registry-based autologon - password stored in registry (**extractable**)
    - See detailed analysis in [Autologon Security](#autologon-security-legacy-vs-modern) section
 
@@ -509,7 +509,7 @@ The Windows App relies on protocol handlers to launch connections directly from 
 | Driver | Impact | Benefit of Modern Architecture |
 |--------|--------|-------------------------------|
 | **Windows App Functionality** | Critical | GPO method breaks protocol handlers (silent fail); Shell Launcher fixes this |
-| **Autologon Security** | Critical | S4U passwordless (no stored credentials) vs. registry password (extractable) |
+| **Autologon Security** | Critical | Assigned Access autologon (encrypted LSA secrets) vs. registry password (extractable) |
 | **Configuration Cleanup** | High | Remove 95+ unnecessary GPO settings (dead weight); replace DisallowRun list with AppLocker |
 | **Architectural Simplification** | High | Direct shell replacement vs. two-step (GPO → kiosk.bat → Edge) |
 | **Maintenance** | Medium | 5 essential GPO settings vs. 100+ (easier to audit and troubleshoot) |
@@ -547,10 +547,10 @@ The Windows App relies on protocol handlers to launch connections directly from 
 | **Logoff Scripts** | GPO scripts.ini (logoff section) | GPO scripts.ini (logoff section) - **UNCHANGED** |
 | **Certificate Cleanup** | `certutil -user -delstore MY *.*` via logoff script | `certutil -user -delstore MY *.*` via logoff script - **UNCHANGED** |
 | **Keyboard Filtering** | Windows Keyboard Filter (optional feature) | Windows Keyboard Filter (optional feature) - **UNCHANGED** |
-| **Auto-Logon Method** | Registry-based (Winlogon AutoAdminLogon) | Assigned Access S4U (Service-for-User) |
-| **Auto-Logon User** | wes10_user (password REQUIRED) | KioskUser0 (passwordless) |
-| **Password Storage** | ⚠️ Stored in registry (HKLM\...\Winlogon) | ✅ No password (S4U token-based logon) |
-| **Password Security Risk** | ⚠️ Extractable with physical access/admin tools | ✅ No password to extract |
+| **Auto-Logon Method** | Registry-based (Winlogon AutoAdminLogon) | Assigned Access autologon |
+| **Auto-Logon User** | wes10_user (password in registry) | KioskUser0 (auto-generated password) |
+| **Password Storage** | ⚠️ Stored in registry (HKLM\...\Winlogon) | ✅ Encrypted LSA secrets (auto-generated complex password) |
+| **Password Security Risk** | ⚠️ Extractable with admin tools | ✅ Requires SYSTEM-level access to LSA secrets |
 | **User Account Name** | wes10_user | KioskUser0 |
 | **Session Reset** | Manual logoff or scheduled task | Windows App auto-logoff feature |
 | **Configuration Complexity** | High (100+ GPO settings) | Low (5 GPO settings + AppLocker + Edge policies) |
@@ -594,7 +594,7 @@ start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --kiosk 
 - Automatic crash recovery (RestartShell action)
 - Modern application support (Edge with protocol handlers)
 - Built-in idle timeout support (`--kiosk-idle-timeout-minutes=15`)
-- S4U passwordless autologon (`<AutoLogonAccount/>`)
+- Assigned Access autologon with encrypted LSA secrets (`<AutoLogonAccount/>`)
 - Requires minimal additional GPO restrictions
 
 ### Group Policy Settings Reduction
@@ -746,7 +746,7 @@ start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --kiosk 
 
 ### Defense in Depth Approach
 
-The modern kiosk architecture implements a layered security model where each component provides independent protection. **Key improvement over legacy:** Passwordless S4U autologon eliminates stored credential risk.
+The modern kiosk architecture implements a layered security model where each component provides independent protection. **Key improvement over legacy:** Assigned Access autologon uses auto-generated complex passwords stored in encrypted LSA secrets instead of registry-stored passwords.
 
 ```text
 ┌────────────────────────────────────────────────────────────────┐
@@ -797,11 +797,12 @@ The modern kiosk architecture implements a layered security model where each com
 └────────────────────────────────────────────────────────────────┘
                               ↓
 ┌────────────────────────────────────────────────────────────────┐
-│          Security Layer 7: Passwordless Autologon (NEW)        │
-│  S4U (Service-for-User) token-based logon                      │
-│  - No password stored anywhere (vs. legacy: password in reg)   │
-│  - Cannot extract credentials from system                      │
-│  - No password rotation required                               │
+│    Security Layer 7: Assigned Access Autologon (IMPROVED)      │
+│  Auto-generated complex password stored in encrypted LSA       │
+│  - Password automatically created by Windows (highly complex)  │
+│  - Stored in encrypted LSA secrets (vs. legacy: registry)      │
+│  - Requires SYSTEM-level access to extract                     │
+│  - No manual password management required                      │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -849,7 +850,7 @@ HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon
    - Security audits will flag this as a finding
    - Password storage location is well-known (easy target for attackers)
 
-#### Modern Approach: Shell Launcher S4U (Service-for-User) Passwordless Autologon
+#### Modern Approach: Assigned Access Autologon
 
 **Configuration:**
 
@@ -857,7 +858,7 @@ HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon
 <ShellLauncherConfiguration>
   <Configs>
     <Config>
-      <AutoLogonAccount/>  <!-- No password required -->
+      <AutoLogonAccount/>  <!-- Password auto-generated and managed by Windows -->
       <Profile Id="{GUID}"/>
     </Config>
   </Configs>
@@ -866,139 +867,163 @@ HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon
 
 **Security Advantages:**
 
-1. **No Password Stored Anywhere** ✅ MAJOR IMPROVEMENT
-   - S4U (Service-for-User) uses Kerberos/NTLM token-based authentication
-   - Windows generates logon tokens without requiring a password
-   - Account can have no password (or blank password)
-   - **Nothing to extract** even with physical access to the device
-   - No registry storage, no LSA secrets, no credential material on disk
+1. **Protected Password Storage** ✅ MAJOR IMPROVEMENT
+   - Windows automatically generates a random, highly complex password
+   - Password stored in **LSA (Local Security Authority) secrets** - encrypted storage
+   - **Significantly more secure** than registry storage (DefaultPassword value)
+   - LSA secrets are encrypted and require SYSTEM-level access to extract
+   - Microsoft documentation: [Protecting the Automatic Logon Password](https://learn.microsoft.com/en-us/windows/win32/secauthn/protecting-the-automatic-logon-password)
 
-2. **No Password Management** ✅ OPERATIONAL IMPROVEMENT
-   - No password complexity requirements to manage
-   - No password rotation needed
+2. **Automatic Password Management** ✅ OPERATIONAL IMPROVEMENT
+   - Windows automatically generates and manages the password
+   - No manual password configuration required
+   - No password rotation needed (managed by Windows)
    - No forgotten password scenarios
-   - Configuration is XML-based (no secrets in configuration)
+   - Configuration is XML-based (no secrets in configuration files)
 
-3. **No Credential Theft Risk** ✅ SECURITY IMPROVEMENT
-   - Even if attacker gains physical access and extracts all data from disk, there is no password to find
-   - Account cannot be logged into remotely (S4U logon is local-only)
-   - Cannot be used on other systems (no credential to steal)
-   - Significantly reduces attack surface
+3. **Reduced Credential Theft Risk** ✅ SECURITY IMPROVEMENT
+   - Password stored in encrypted LSA secrets (not plaintext registry)
+   - Requires SYSTEM-level privileges to extract (vs. Administrator for registry)
+   - Account is local-only (cannot be used for remote logon by default)
+   - Cannot easily be used on other systems
+   - Significantly reduces attack surface compared to legacy methods
 
 4. **Compliance and Audit** ✅ COMPLIANCE IMPROVEMENT
-   - Aligns with security best practices (no stored passwords)
+   - Uses Windows-recommended LSA secrets for credential protection
+   - Aligns with security best practices (encrypted credential storage)
    - Meets compliance requirements for credential protection
-   - Security audits will approve this approach
    - Modern, Microsoft-recommended method for kiosk autologon
 
-#### Technical Deep Dive: How S4U Works
+#### Technical Deep Dive: How Assigned Access Autologon Works
 
-**S4U (Service-for-User) Logon Mechanism:**
+**Assigned Access Autologon Mechanism:**
 
-S4U is a Windows security extension that allows a service to obtain a Kerberos service ticket on behalf of a user **without requiring the user's password**. Shell Launcher uses this mechanism for autologon.
+When you configure Shell Launcher with `<AutoLogonAccount/>`, Windows automatically creates the KioskUser0 account with a randomly generated, highly complex password stored in LSA secrets. This provides automatic logon functionality with better security than registry-based methods.
 
 **Process Flow:**
 
 1. System boots → Shell Launcher service starts
-2. Shell Launcher requests S4U logon token for KioskUser0
-3. Windows Local Security Authority (LSA) generates logon token using:
-   - User SID (Security Identifier)
-   - Group memberships (e.g., Users, Non-Administrators)
-   - Privileges and rights
-   - **No password validation required**
-4. Shell Launcher creates user session with generated token
-5. User is logged in automatically without password prompt
+2. Windows creates KioskUser0 account (if it doesn't exist)
+3. Windows generates a random, highly complex password
+4. Password is stored in encrypted LSA secrets (not accessible to users/admins)
+5. Shell Launcher uses the stored credentials to automatically log in KioskUser0
+6. User is logged in automatically without password prompt
 
 **Why This Is Secure:**
 
-- S4U logon is a **privileged operation** (only SYSTEM-level services can request it)
-- Cannot be invoked by regular users or applications
-- Token is generated fresh each time (not stored)
-- Only works locally (cannot be used for remote/network authentication)
-- Account can be configured with no password at all (or blank password)
+- Password is **automatically generated** (highly complex, not guessable)
+- Password stored in **encrypted LSA secrets** (requires SYSTEM-level access to extract)
+- LSA secrets are more secure than registry storage
+- Only SYSTEM-level processes can access LSA secrets
+- Password is automatically managed by Windows (no manual rotation needed)
+- Account is local-only by default (cannot be used for remote authentication)
 
 #### Security Comparison Summary
 
-| Aspect | Legacy (Registry Autologon) | Modern (S4U Autologon) | Winner |
+| Aspect | Legacy (Registry Autologon) | Modern (Assigned Access Autologon) | Winner |
 |--------|---------------------------|----------------------|--------|
-| **Password Storage** | Registry (HKLM\\Winlogon) | None (no password) | ✅ Modern |
-| **Credential Extractability** | Yes (tools available) | No (nothing to extract) | ✅ Modern |
-| **Password Rotation** | Required (manual update) | Not needed (no password) | ✅ Modern |
-| **Remote Login Risk** | Yes (if password stolen) | No (S4U is local-only) | ✅ Modern |
-| **Compliance** | ⚠️ May violate policies | ✅ Meets best practices | ✅ Modern |
-| **Attack Surface** | Password on disk | No credentials on disk | ✅ Modern |
-| **Audit Findings** | ⚠️ Will be flagged | ✅ Will pass | ✅ Modern |
-| **User Account** | wes10_user (with password) | KioskUser0 (no password) | ✅ Modern |
+| **Password Storage** | Registry (HKLM\\Winlogon) | Encrypted LSA secrets | ✅ Modern |
+| **Password Complexity** | User-defined (may be weak) | Auto-generated (highly complex) | ✅ Modern |
+| **Credential Extractability** | Yes (admin tools can read registry) | Yes but harder (requires SYSTEM-level LSA access) | ✅ Modern |
+| **Password Rotation** | Required (manual update) | Automatic (managed by Windows) | ✅ Modern |
+| **remote Login Risk** | Yes (if password extracted) | Limited (local account, LSA-protected) | ✅ Modern |
+| **Compliance** | ⚠️ May violate policies (registry storage) | ✅ Meets best practices (LSA secrets) | ✅ Modern |
+| **Attack Surface** | Password in registry (admin-accessible) | Password in encrypted LSA secrets (SYSTEM-only) | ✅ Modern |
+| **Audit Findings** | ⚠️ Will be flagged (weak storage) | ✅ Will pass (proper credential protection) | ✅ Modern |
+| **User Account** | wes10_user (manual password) | KioskUser0 (auto-generated password) | ✅ Modern |
 
-**Conclusion:** The modern S4U (Service-for-User) autologon approach is **significantly more secure** than legacy registry-based autologon. This alone is a compelling reason to migrate, even if the UWP protocol handler issue didn't exist.
+**Conclusion:** The modern Assigned Access autologon approach is **significantly more secure** than legacy registry-based autologon. Windows automatically generates a highly complex password and stores it in encrypted LSA secrets rather than the registry. This alone is a compelling reason to migrate, even if the UWP protocol handler issue didn't exist.
 
-**For Security Evaluators:** The elimination of stored passwords addresses a critical security vulnerability (CWE-256: Plaintext Storage of a Password, CWE-522: Insufficiently Protected Credentials). The modern approach aligns with NIST SP 800-63B guidelines and industry best practices for credential management.
+**For Security Evaluators:** The use of encrypted LSA secrets for credential storage (vs. registry storage) addresses critical security concerns about credential protection (CWE-522: Insufficiently Protected Credentials). The modern approach aligns with NIST SP 800-63B guidelines and industry best practices for credential management.
 
-#### ⚠️ CRITICAL: Group Policy Settings That Break S4U Autologon
+#### ⚠️ CRITICAL: Group Policy Settings That Break Assigned Access Autologon
 
-**WARNING:** Certain Group Policy security settings can **prevent S4U autologon from working**. The KioskUser0 account requires no password (or blank password) to function correctly. The following Local Security Policy settings **MUST NOT be enforced** on kiosk systems:
+**VERIFIED:** Based on real-world testing, only the following settings **actually break** Assigned Access autologon. Password policies do NOT affect Assigned Access autologon functionality.
 
-**❌ Settings That Will Break S4U Autologon:**
+**🚫 Settings That Break Autologon (VERIFIED):**
 
-1. **Password must meet complexity requirements** = Enabled
-   - Policy Path: `Computer Configuration → Windows Settings → Security Settings → Account Policies → Password Policy`
-   - Registry: `HKLM\SYSTEM\CurrentControlSet\Control\Lsa\PasswordComplexity`
-   - **Impact:** Prevents KioskUser0 account creation with blank password
-   - **Required Setting:** **Disabled** (allows blank passwords)
-
-2. **Minimum password length** > 0
-   - Policy Path: `Computer Configuration → Windows Settings → Security Settings → Account Policies → Password Policy`
-   - Registry: `HKLM\SYSTEM\CurrentControlSet\Control\Lsa\MinimumPasswordLength`
-   - **Impact:** Requires password for KioskUser0 account (defeats S4U purpose)
-   - **Required Setting:** **0 characters** (allows blank passwords)
-
-3. **Maximum password age** < 99999 days
-   - Policy Path: `Computer Configuration → Windows Settings → Security Settings → Account Policies → Password Policy`
-   - Registry: `HKLM\SYSTEM\CurrentControlSet\Control\Lsa\MaximumPasswordAge`
-   - **Impact:** Password expiration will break autologon
-   - **Required Setting:** **99999 days** or **0** (never expires)
-
-4. **Account lockout threshold** > 0
-   - Policy Path: `Computer Configuration → Windows Settings → Security Settings → Account Policies → Account Lockout Policy`
-   - Registry: `HKLM\SYSTEM\CurrentControlSet\Services\RemoteAccess\Parameters\AccountLockout`
-   - **Impact:** Failed logon attempts could lock kiosk account
-   - **Required Setting:** **0** (disabled - no lockout)
-
-5. **Interactive logon: Do not require CTRL+ALT+DEL** = Disabled (Not configured is OK)
+1. **Interactive logon: Message text for users attempting to log on** (LegalNoticeText)
+   - **STIG Findings:** Multiple STIGs require legal notices (e.g., V-253283)
    - Policy Path: `Computer Configuration → Windows Settings → Security Settings → Local Policies → Security Options`
-   - Registry: `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\DisableCAD`
-   - **Impact:** May interfere with automatic logon process
-   - **Required Setting:** **Enabled** or **Not Configured**
+   - Registry: `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\LegalNoticeText`
+   - **Impact:** ⚠️ **CRITICAL** - Forces interactive user acknowledgment, **completely breaks autologon**
+   - **Microsoft Documentation:** "This registry change does not work if the Logon Banner value is defined" ([Source](https://learn.microsoft.com/en-us/troubleshoot/windows-server/user-profiles-and-logon/turn-on-automatic-logon))
+   - **Required Setting:** **Not Configured** or **Empty** (no legal notice)
+   - **Mitigation:** Display legal notice within kiosk app instead of at OS logon screen
 
-**✅ Automated Configuration:**
+2. **Interactive logon: Message title for users attempting to log on** (LegalNoticeCaption)
+   - **STIG Findings:** Multiple STIGs require legal notices (e.g., V-253283)
+   - Policy Path: `Computer Configuration → Windows Settings → Security Settings → Local Policies → Security Options`
+   - Registry: `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\LegalNoticeCaption`
+   - **Impact:** ⚠️ **CRITICAL** - Forces interactive user acknowledgment, **completely breaks autologon**
+   - **Required Setting:** **Not Configured** or **Empty** (no legal notice caption)
+   - **Mitigation:** Display legal notice within kiosk app instead of at OS logon screen
 
-The `Set-WindowsAppFromEdgeKioskSettings.ps1` script automatically configures these settings using the security template `S4U-PasswordPolicies.inf` to ensure S4U autologon functions correctly.
+3. **Machine inactivity limit** (MachineInactivityTimeout)
+   - Policy Path: `Computer Configuration → Windows Settings → Security Settings → Local Policies → Security Options → Interactive logon: Machine inactivity limit`
+   - Registry: `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\InactivityTimeoutSecs`
+   - **Impact:** ⚠️ **CRITICAL** - Can interrupt kiosk sessions and require re-authentication
+   - **Required Setting:** **Not Configured** or **0** (disabled)
+   - **Mitigation:** Disable for kiosk systems or set to a very high value
+
+**✅ Settings That Do NOT Break Autologon (VERIFIED):**
+
+The following settings were previously thought to break autologon but have been **verified to NOT affect** Assigned Access autologon:
+
+- ✅ **Password complexity requirements** - No impact on Assigned Access autologon
+- ✅ **Minimum password length** - No impact on Assigned Access autologon (including STIG requirement of ≥14 characters)
+- ✅ **Maximum password age** - No impact on Assigned Access autologon (including STIG requirement of ≤60 days)
+- ✅ **Account lockout threshold** - No impact on Assigned Access autologon
+- ✅ **Exchange ActiveSync (EAS) policies** - Documented as breaking autologon, but not verified in testing
+
+**Why Password Policies Don't Break Assigned Access Autologon:**
+
+Assigned Access autologon stores the password in LSA secrets, and Windows automatically manages it. The password is automatically generated as a highly complex password (random, long, complex). Therefore:
+- Password complexity requirements can be enforced without affecting autologon
+- Minimum password length requirements (including STIG V-253303: ≥14 chars) don't break autologon
+- Maximum password age requirements (including STIG V-253301: ≤60 days) don't break autologon
+- The KioskUser0 account has a real password stored in LSA secrets, it's just managed automatically by Windows
 
 **🔍 Validation Commands:**
 
 ```powershell
-# Check current password policy settings
-secedit /export /cfg C:\temp\current_policy.inf
-Get-Content C:\temp\current_policy.inf | Select-String -Pattern "PasswordComplexity|MinimumPasswordLength|MaximumPasswordAge|LockoutBadCount"
+# Check for policies that actually break autologon
+$autologonBlockers = @()
 
-# Check if settings are correct for S4U
-$correctSettings = @()
-$currentPolicy = Get-Content C:\temp\current_policy.inf
-if ($currentPolicy -match "PasswordComplexity\s*=\s*0") { $correctSettings += "✅ Password Complexity: Disabled" } else { $correctSettings += "❌ Password Complexity: ENABLED (WILL BREAK S4U)" }
-if ($currentPolicy -match "MinimumPasswordLength\s*=\s*0") { $correctSettings += "✅ Min Password Length: 0" } else { $correctSettings += "❌ Min Password Length: >0 (WILL BREAK S4U)" }
-if ($currentPolicy -match "MaximumPasswordAge\s*=\s*(99999|-1|0)") { $correctSettings += "✅ Max Password Age: Never expires" } else { $correctSettings += "❌ Max Password Age: Will expire (WILL BREAK S4U)" }
-if ($currentPolicy -match "LockoutBadCount\s*=\s*0") { $correctSettings += "✅ Account Lockout: Disabled" } else { $correctSettings += "⚠️ Account Lockout: Enabled (could lock kiosk)" }
-$correctSettings
+# Check for legal notice (breaks autologon)
+$legalNoticeText = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "LegalNoticeText" -ErrorAction SilentlyContinue
+$legalNoticeCaption = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "LegalNoticeCaption" -ErrorAction SilentlyContinue
+
+if ($legalNoticeText.LegalNoticeText -and $legalNoticeText.LegalNoticeText.Length -gt 0) {
+    $autologonBlockers += "❌ LegalNoticeText is set (WILL BREAK AUTOLOGON)"
+} else {
+    $autologonBlockers += "✅ LegalNoticeText is not set"
+}
+
+if ($legalNoticeCaption.LegalNoticeCaption -and $legalNoticeCaption.LegalNoticeCaption.Length -gt 0) {
+    $autologonBlockers += "❌ LegalNoticeCaption is set (WILL BREAK AUTOLOGON)"
+} else {
+    $autologonBlockers += "✅ LegalNoticeCaption is not set"
+}
+
+# Check for machine inactivity timeout (breaks autologon)
+$inactivityTimeout = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "InactivityTimeoutSecs" -ErrorAction SilentlyContinue
+if ($inactivityTimeout.InactivityTimeoutSecs -and $inactivityTimeout.InactivityTimeoutSecs -gt 0) {
+    $autologonBlockers += "⚠️ InactivityTimeoutSecs is set to $($inactivityTimeout.InactivityTimeoutSecs) (CAN INTERRUPT KIOSK)"
+} else {
+    $autologonBlockers += "✅ InactivityTimeoutSecs is not set or disabled"
+}
+
+$autologonBlockers
 ```
 
 **📋 Troubleshooting:**
 
-If S4U autologon fails after configuration:
+If Assigned Access autologon fails after configuration:
 
-1. **Check Event Logs:**
+1. **Check for legal notice or inactivity timeout (these break autologon):**
    ```powershell
-   Get-WinEvent -LogName System | Where-Object {$_.Id -eq 7000 -or $_.Id -eq 7001} | Select-Object -First 10
-   Get-WinEvent -LogName Microsoft-Windows-AssignedAccess/Admin | Select-Object -First 10
+   Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" | Select-Object LegalNoticeText, LegalNoticeCaption, InactivityTimeoutSecs
    ```
 
 2. **Verify KioskUser0 account exists:**
@@ -1006,24 +1031,64 @@ If S4U autologon fails after configuration:
    Get-LocalUser -Name KioskUser0
    ```
 
-3. **Re-apply security template:**
+3. **Check Event Logs:**
    ```powershell
-   secedit /configure /db C:\Windows\security\database\S4U.sdb /cfg "C:\PATH\TO\S4U-PasswordPolicies.inf" /overwrite
-   gpupdate /force
+   Get-WinEvent -LogName System | Where-Object {$_.Id -eq 7000 -or $_.Id -eq 7001} | Select-Object -First 10
+   Get-WinEvent -LogName Microsoft-Windows-AssignedAccess/Admin | Select-Object -First 10
    ```
 
 4. **Check for Group Policy conflicts:**
    - Domain GPOs may override local policies
    - Use `gpresult /h C:\temp\gpreport.html` to identify conflicting policies
+   - Look specifically for: LegalNoticeText, LegalNoticeCaption, InactivityTimeoutSecs
    - Contact domain administrator to create GPO exception for kiosk OUs
 
 **🏢 Enterprise Deployments:**
 
-For enterprise environments with mandatory password policies:
+For enterprise environments with STIG compliance requirements:
 
-- **Option 1 (Recommended):** Create a separate Organizational Unit (OU) for kiosk devices and link a GPO that exempts them from password complexity requirements
+- **Option 1 (Recommended):** Create a separate Organizational Unit (OU) for kiosk devices and link a GPO that exempts them from:
+  - Legal notice requirements (LegalNoticeText/LegalNoticeCaption)
+  - Machine inactivity timeout (InactivityTimeoutSecs)
 - **Option 2:** Use WMI filtering on domain GPOs to exclude kiosk machines based on naming convention or other criteria
-- **Option 3:** Use Security Filtering to exclude the `KioskUser0` account from password policy GPOs (local account - usually sufficient)
+- **Option 3:** Apply compensating controls (display legal notice in kiosk app) and document in System Security Plan (SSP)
+
+**📋 STIG Compliance Considerations:**
+
+When applying Windows 11 STIG (Security Technical Implementation Guide) to kiosk systems:
+
+**✅ Compatible STIG Settings (Verified - No Impact on Autologon):**
+- ✅ **V-253304** (Password complexity = Enabled): No impact on Assigned Access autologon
+- ✅ **V-253303** (Minimum password length = 14 chars): No impact on Assigned Access autologon
+- ✅ **V-253301** (Maximum password age ≤ 60 days): No impact on Assigned Access autologon
+- ✅ **Account lockout policies**: No impact on Assigned Access autologon
+- ✅ **All other password policies**: No impact on Assigned Access autologon
+
+**❌ Incompatible STIG Settings (Verified - BREAKS Autologon):**
+- ❌ **V-253283** (Legal notice text/caption): **BREAKS autologon** - must be disabled or compensated
+- ❌ **Interactive logon message requirements**: **BREAKS autologon** - display within kiosk app instead
+- ❌ **Machine inactivity limit**: **CAN INTERRUPT** kiosk sessions - must be disabled or set very high
+
+**Recommended Approach for STIG-Compliant Kiosks:**
+1. Apply domain-level STIG GPOs including ALL password policies (these work fine with Assigned Access autologon)
+2. Create kiosk-specific OU with GPO exceptions for:
+   - Legal notice text/caption (set to empty)
+   - Machine inactivity timeout (set to 0 or disabled)
+3. Display legal notices within the kiosk application itself (e.g., splash screen on app startup)
+4. Document compensating controls in your System Security Plan (SSP):
+   - Legal notice displayed in application instead of OS logon
+   - Physical security controls prevent unauthorized access
+   - Kiosk-specific hardening provides equivalent protection
+
+**Reference Script:**
+
+A previous version of this solution included `Apply-STIGAutoLogonExceptions.ps1` ([GitHub](https://github.com/Azure/WindowsAppKiosk/blob/df11e17d2bd3c4fc4837a8f73005ed03f161a432/source/Scripts/Configuration/Apply-STIGAutoLogonExceptions.ps1)) which correctly addressed:
+- ✅ **LegalNoticeCaption** (verified - breaks autologon)
+- ✅ **LegalNoticeText** (verified - breaks autologon)
+- ✅ **InactivityTimeoutSecs** (verified - interrupts kiosk sessions)
+- ⚠️ **Lsa\Pku2u\AllowOnlineID** (not verified as necessary)
+
+The script's focus on legal notices and inactivity timeout was correct based on real-world testing.
 
 ### Application Control (AppLocker)
 
@@ -1886,7 +1951,7 @@ The evolution from legacy GPO-driven shell replacement to modern Shell Launcher 
 
 ---
 
-**Version:** 2026.02.19  
+**Version:** 2026.02.24  
 **Document Version:** 1.0  
 **Maintained by:** Shawn Meyer, Microsoft
 

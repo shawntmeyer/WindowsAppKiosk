@@ -420,7 +420,7 @@ Restart-Computer -Force
 
 **Symptoms:** System boots to normal login screen instead of automatic KioskUser0 login, or KioskUser0 account not created
 
-**Root Cause:** Group Policy password complexity or minimum length requirements prevent S4U autologon from functioning. The KioskUser0 account requires NO PASSWORD for S4U to work correctly.
+**Root Cause:** Group Policy settings for legal notices or machine inactivity timeout prevent Assigned Access autologon from functioning. These settings require interactive user acknowledgment and break automatic logon.
 
 **Solutions:**
 
@@ -429,45 +429,41 @@ Restart-Computer -Force
    Get-LocalUser -Name KioskUser0
    ```
    
-2. **Verify Local Security Policy password settings:**
+2. **Check for settings that break autologon (VERIFIED):**
    ```powershell
-   # Export current policy
-   secedit /export /cfg C:\temp\current_policy.inf
-   
-   # Check critical settings
-   Get-Content C:\temp\current_policy.inf | Select-String "PasswordComplexity|MinimumPasswordLength|MaximumPasswordAge|LockoutBadCount"
+   # Check for legal notices (these BREAK autologon)
+   Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" | Select-Object LegalNoticeText, LegalNoticeCaption, InactivityTimeoutSecs
    ```
    
-   **Required values for S4U:**
-   - `PasswordComplexity = 0` (complexity disabled)
-   - `MinimumPasswordLength = 0` (blank passwords allowed)
-   - `MaximumPasswordAge = 99999 or -1` (never expires)
-   - `LockoutBadCount = 0` (lockout disabled)
+   **Settings that BREAK autologon:**
+   - `LegalNoticeText` - Must be empty/not configured
+   - `LegalNoticeCaption` - Must be empty/not configured
+   - `InactivityTimeoutSecs` - Must be 0 or not configured
+   
+   **Settings that DO NOT break autologon:**
+   - ✅ Password complexity requirements (works fine)
+   - ✅ Minimum password length (works fine)
+   - ✅ Maximum password age (works fine)
+   - ✅ Account lockout threshold (works fine)
 
-3. **Re-apply S4U password policies:**
-   ```powershell
-   # Re-run configuration with password policy fix
-   cd C:\path\to\source\GPOs
-   secedit /configure /db C:\Windows\security\database\S4U.sdb /cfg "S4U-PasswordPolicies.inf" /overwrite
-   gpupdate /force
-   Restart-Computer
-   ```
-
-4. **Check for domain GPO conflicts (domain-joined systems):**
+3. **Check for domain GPO conflicts (domain-joined systems):**
    ```powershell
    # Generate Group Policy results report
    gpresult /h C:\temp\gpreport.html
    
-   # Open report and check Computer Configuration > Windows Settings > Security Settings > Account Policies > Password Policy
-   # Look for "Winning GPO" - if it's a domain GPO, that's your issue
+   # Open report and check:
+   # Computer Configuration > Windows Settings > Security Settings > Local Policies > Security Options
+   # Look for: Interactive logon: Message text/title for users attempting to log on
+   # Look for: Interactive logon: Machine inactivity limit
    ```
    
    **Domain GPO Override Solutions:**
    - Contact your domain administrator to create a separate OU for kiosk devices
-   - Request GPO exemption or WMI filtering to exclude kiosk machines from password policies
-   - Apply a kiosk-specific GPO with password complexity disabled that has higher precedence
+   - Request GPO exemption for legal notices and inactivity timeout
+   - Apply a kiosk-specific GPO that sets these values to empty/disabled
+   - Display legal notice within kiosk application as compensating control
 
-5. **Check Shell Launcher status:**
+4. **Check Shell Launcher status:**
    ```powershell
    # Verify Shell Launcher configuration exists
    Get-AssignedAccessShellLauncher
@@ -490,7 +486,7 @@ Restart-Computer -Force
 > [!WARNING]
 > **For domain-joined systems:** Domain Group Policies override local policies. If the winning GPO for password complexity/length is from the domain, local configuration changes will have NO EFFECT. You MUST work with your domain administrator to resolve this.
 
-**Related Documentation:** See [ARCHITECTURE.md - Group Policy Settings That Break S4U Autologon](ARCHITECTURE.md#️-critical-group-policy-settings-that-break-s4u-autologon) for detailed technical explanation.
+**Related Documentation:** See [ARCHITECTURE.md - Group Policy Settings That Break Assigned Access Autologon](ARCHITECTURE.md#️-critical-group-policy-settings-that-break-assigned-access-autologon) for detailed technical explanation.
 
 **Problem: Keyboard is completely unresponsive**
 

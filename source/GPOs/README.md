@@ -11,53 +11,94 @@ These files use the LGPO.exe tool format for configuring registry-based Group Po
 - `DisablePasswordForUnlock.txt` - Disable password for screen saver and wake from sleep
 - `PowerSettings.txt` - Power management policies
 
-### Security Templates (.inf)
-These files use the Windows Security Template format for configuring Local Security Policy settings that cannot be set via registry.
+## What Breaks Assigned Access Autologon (VERIFIED)
 
-#### S4U-PasswordPolicies.inf
+Based on real-world verification, only the following Group Policy settings **actually break** Assigned Access autologon:
 
-**Purpose:** Configures Local Security Policy password settings to support S4U (Service-for-User) passwordless autologon used by Shell Launcher.
+### ❌ Interactive Logon Legal Notices
 
-**Settings Configured:**
-- `PasswordComplexity = 0` - Disables password complexity requirements (allows blank passwords)
-- `MinimumPasswordLength = 0` - Sets minimum password length to 0 characters (allows blank passwords)
-- `MaximumPasswordAge = 99999` - Sets password to never expire (99999 days = ~273 years)
-- `MinimumPasswordAge = 0` - Allows immediate password changes
-- `PasswordHistorySize = 0` - Disables password history
-- `LockoutBadCount = 0` - Disables account lockout policy
+**Settings:**
+- `LegalNoticeCaption` - Interactive logon: Message title for users attempting to log on
+- `LegalNoticeText` - Interactive logon: Message text for users attempting to log on
 
-**Why This Is Required:**
+**Registry Location:**
+```
+HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\LegalNoticeCaption
+HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\LegalNoticeText
+```
 
-The KioskUser0 account created by Shell Launcher uses S4U autologon, which generates a logon token WITHOUT requiring a password. This is a **security improvement** over legacy methods that stored passwords in the registry.
+**Why it breaks autologon:**
+- Forces interactive user acknowledgment (clicking OK)
+- Microsoft documentation explicitly states this breaks autologon
+- [Reference: Turn on automatic logon](https://learn.microsoft.com/en-us/troubleshoot/windows-server/user-profiles-and-logon/turn-on-automatic-logon)
 
-However, if Local Security Policy enforces password complexity or minimum length requirements, Windows will:
-1. Prevent creation of accounts with blank/no password
-2. Require the KioskUser0 account to have a complex password
-3. Break S4U autologon (defeats the entire purpose)
+**Mitigation:**
+- Set to empty/not configured for kiosk devices
+- Display legal notice within kiosk application instead
+- Create GPO exemption for kiosk OU
 
-**Applied By:** `Set-WindowsAppFromEdgeKioskSettings.ps1` using the `secedit /configure` command
+### ❌ Machine Inactivity Timeout
 
-**Format:** Windows Security Template (.inf) - Unicode text file
+**Setting:**
+- `InactivityTimeoutSecs` - Interactive logon: Machine inactivity limit
 
-**Domain Considerations:**
+**Registry Location:**
+```
+HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\InactivityTimeoutSecs
+```
 
-⚠️ **WARNING:** On domain-joined systems, domain Group Policies may override these local settings. If S4U autologon fails after configuration:
+**Why it breaks kiosk:**
+- Forces logoff/lock after inactivity period
+- Requires re-authentication
+- Disrupts kiosk user experience
 
-1. Check for domain policy conflicts:
+**Mitigation:**
+- Set to 0 (disabled) for kiosk devices
+- Create GPO exemption for kiosk OU
+
+## What Does NOT Break Autologon (VERIFIED)
+
+### ✅ Password Policies - ALL COMPATIBLE
+
+**Verified Facts:**
+- Assigned Access autologon stores password in LSA secrets (encrypted storage)
+- Windows automatically generates a random, highly complex password
+- Password is automatically managed by Windows
+- Password policies do not affect autologon functionality
+- [Microsoft documentation reference](https://learn.microsoft.com/en-us/windows/win32/secauthn/protecting-the-automatic-logon-password)
+
+**STIG Compliance - Good News:**
+
+All STIG password policies are fully compatible with Assigned Access autologon:
+- ✅ V-253304 (Password complexity = Enabled) - Works fine
+- ✅ V-253303 (Minimum password length ≥14 chars) - Works fine
+- ✅ V-253301 (Maximum password age ≤60 days) - Works fine
+- ✅ Account lockout threshold - Works fine
+- ✅ Password history - Works fine
+
+## Domain-Joined STIG Deployments
+
+For domain-joined STIG-compliant deployments:
+
+1. **Check for domain policy conflicts:**
    ```powershell
    gpresult /h C:\temp\gpreport.html
    ```
 
-2. Work with your domain administrator to:
-   - Create a separate OU for kiosk devices
-   - Link a GPO that exempts kiosk OU from password policy requirements
-   - Or use WMI filtering to exclude kiosk machines from password policies
+2. **Look for these policies that BREAK autologon:**
+   - Interactive logon: Message text for users attempting to log on (LegalNoticeText)
+   - Interactive logon: Message title for users attempting to log on (LegalNoticeCaption)
+   - Machine inactivity limit (InactivityTimeoutSecs)
 
-3. Verify current policy settings:
-   ```powershell
-   secedit /export /cfg C:\temp\current_policy.inf
-   Get-Content C:\temp\current_policy.inf | Select-String "PasswordComplexity|MinimumPasswordLength|MaximumPasswordAge|LockoutBadCount"
-   ```
+3. **Work with your domain administrator to:**
+   - Create a separate OU for kiosk devices
+   - Link a GPO that sets legal notices to empty/disabled for kiosk OU
+   - Set machine inactivity timeout to 0 or very high value
+   - Apply ALL password policies (these work fine with Assigned Access autologon)
+
+4. **For detailed STIG compliance analysis:** 
+   - See [STIG_AUTOLOGON_ANALYSIS.md](../../STIG_AUTOLOGON_ANALYSIS.md)
+   - See [VERIFIED_AUTOLOGON_FINDINGS.md](../../VERIFIED_AUTOLOGON_FINDINGS.md)
 
 ## Usage
 
