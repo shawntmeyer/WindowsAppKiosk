@@ -139,7 +139,7 @@ $DirGroupPolicyUsers = "$env:SystemRoot\System32\GroupPolicyUsers"
 $GPOsRemoved = $false
 
 If (Test-Path -Path $DirGroupPolicyUsers) {
-    $UserGroupGPOs = Get-ChildItem -Path $DirGroupPolicyUsers -Directory -ErrorAction SilentlyContinue
+    $UserGroupGPOs = Get-ChildItem -Path $DirGroupPolicyUsers -Directory -Force -ErrorAction SilentlyContinue
     
     If ($UserGroupGPOs) {
         Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 12 -EntryType Information -Message "Found $($UserGroupGPOs.Count) user/group-specific local group policy object(s). Removing them."
