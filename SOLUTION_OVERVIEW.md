@@ -12,7 +12,7 @@ This repository contains a **customized kiosk solution** for Azure Virtual Deskt
 
 - **Customized for Requirements** - Tailored to specific deployment needs and preferences
 - **Multi-Layered Security** - Shell Launcher with comprehensive access controls
-- **Automatic Logon** - Zero-touch user experience with KioskUser0 account
+- **Optional Automatic Logon** - Optionally use Assigned Access autologon with KioskUser0, or retain existing autologon
 - **Edge as Shell** - Browser-based interface for flexibility and familiarity
 - **Windows App Integration** - Native ms-avd:// protocol support
 
@@ -94,7 +94,7 @@ This solution uses multiple Windows technologies working together to create a se
 | Component | Purpose | Implementation |
 |-----------|---------|----------------|
 | **Shell Launcher** | Replaces Explorer with Edge | Assigned Access WMI Bridge CSP |
-| **Automatic Logon** | Creates and auto-signs in KioskUser0 | Assigned Access Configuration |
+| **Automatic Logon** | Optional: Creates and auto-signs in KioskUser0 | Assigned Access Configuration (when UseAssignedAccessAutologon used) |
 | **Edge Kiosk Mode** | Single-app fullscreen browser | Shell Launcher XML configuration |
 | **AppLocker** | Blocks unauthorized applications | Local AppLocker policy |
 | **Group Policy** | System lockdown and restrictions | Multi-user LGPO (non-administrators) |
@@ -106,10 +106,18 @@ This solution uses multiple Windows technologies working together to create a se
 
 ### Sign-In and Launch
 
-The kiosk provides a zero-touch experience:
+**With Assigned Access Autologon (UseAssignedAccessAutologon parameter):**
 
 1. **Power On** → System boots to Windows 11
-2. **Automatic Logon** → KioskUser0 account signs in automatically (no password)
+2. **Automatic Logon** → KioskUser0 account signs in automatically
+3. **Shell Replacement** → Shell Launcher starts Edge instead of Explorer
+4. **Kiosk Mode** → Edge opens in fullscreen single-app kiosk mode
+5. **Default Page** → Edge displays your configured URL
+
+**Without Assigned Access Autologon (parameter omitted):**
+
+1. **Power On** → System boots to Windows 11
+2. **Manual Login** → User logs in with existing account or existing autologon configuration
 3. **Shell Replacement** → Shell Launcher starts Edge instead of Explorer
 4. **Kiosk Mode** → Edge opens in fullscreen single-app kiosk mode
 5. **Default Page** → Edge displays your configured URL

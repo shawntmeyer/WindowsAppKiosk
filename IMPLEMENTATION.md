@@ -26,6 +26,7 @@ The `Set-WindowsAppFromEdgeKioskSettings.ps1` script accepts the following param
 
 | Parameter | Type | Required | Default | Description |
 |:----------|:----:|:--------:|:--------|:------------|
+| `UseAssignedAccessAutologon` | Switch | No | Not set | Creates a KioskUser0 account with Assigned Access autologon (automatic login at boot). When **enabled**, uses `Edge_AutoLogon.xml` configuration to create and automatically log in KioskUser0. When **omitted**, uses `Edge.xml` configuration which requires manual user logon or preserves existing autologon configuration. This allows customers to retain their current autologon setup or use different autologon methods. **When used with `-RemoveLegacySettings`, existing autologon configuration is removed. When omitted, existing autologon is preserved.** |
 | `InstallWindowsApp` | Switch | No | Not set | Automatically downloads and installs the latest Windows App from Microsoft. Supports both online (automatic download) and offline (local MSIX file) installation. For air-gapped environments, place the Windows App MSIX file in `source/Apps/WindowsApp/` directory. **See [Windows App Deployment Guide](source/Apps/WindowsApp/README.md) for detailed offline installation instructions.** |
 | `WindowsAppAutoLogoffConfig` | String | **Yes** | None | Determines Windows App automatic logoff behavior. **Values:** `Disabled`, `ResetAppOnCloseOnly`, `ResetAppAfterConnection`, `ResetAppOnCloseOrIdle`. See [Solution Overview](SOLUTION_OVERVIEW.md#windows-app-auto-logoff-behaviors) for detailed behavior descriptions. **Recommended:** Use `ResetAppOnCloseOrIdle` for public kiosks. |
 | `WindowsAppAutoLogoffTimeInterval` | Integer | Conditional | 15 | Interval in minutes for Windows App to check OS inactivity. **Required when** `WindowsAppAutoLogoffConfig` is set to `ResetAppOnCloseOrIdle`. The app polls every N minutes and triggers reset if N+ minutes of inactivity detected. |
@@ -135,9 +136,24 @@ The kiosk will be active after the restart.
 
 ## Configuration Examples
 
-### Basic Configuration
+> [!NOTE]
+> All examples below can be used with or without the `-UseAssignedAccessAutologon` parameter:
+> - **With `-UseAssignedAccessAutologon`:** Creates KioskUser0 with automatic login
+> - **Without `-UseAssignedAccessAutologon`:** Requires manual user login or preserves existing autologon configuration
 
-Minimal configuration with automatic logoff on close:
+### Basic Configuration with Assigned Access Autologon
+
+Minimal configuration with automatic logoff on close and KioskUser0 autologon:
+
+```powershell
+.\Set-WindowsAppFromEdgeKioskSettings.ps1 `
+    -UseAssignedAccessAutologon `
+    -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOnly'
+```
+
+### Basic Configuration Preserving Existing Autologon
+
+Same configuration but keeping your current autologon user:
 
 ```powershell
 .\Set-WindowsAppFromEdgeKioskSettings.ps1 `
@@ -146,10 +162,11 @@ Minimal configuration with automatic logoff on close:
 
 ### Recommended Public Kiosk Configuration
 
-Maximum security with idle timeout, Windows App installation, and maintenance:
+Maximum security with Assigned Access autologon, idle timeout, Windows App installation, and maintenance:
 
 ```powershell
 .\Set-WindowsAppFromEdgeKioskSettings.ps1 `
+    -UseAssignedAccessAutologon `
     -InstallWindowsApp `
     -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOrIdle' `
     -WindowsAppAutoLogoffTimeInterval 15 `
@@ -160,6 +177,7 @@ Maximum security with idle timeout, Windows App installation, and maintenance:
 ```
 
 **What this does:**
+- ✅ Creates KioskUser0 with automatic login
 - ✅ Downloads and installs Windows App
 - ✅ Resets Windows App on close or after 15 minutes of idle time
 - ✅ Schedules maintenance for 2:00 AM with up to 2-hour random delay

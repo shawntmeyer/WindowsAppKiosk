@@ -15,7 +15,7 @@ This solution configures Microsoft Edge in kiosk mode as the Windows shell, repl
 
 **Key Features:**
 
-✅ **Automatic Logon** - Uses Windows 11 Assigned Access to create KioskUser0 with automatic sign-in  
+✅ **Optional Automatic Logon** - Optionally use Assigned Access autologon with KioskUser0, or retain your existing autologon configuration  
 ✅ **Edge Kiosk Mode** - Microsoft Edge replaces the Windows shell using Shell Launcher  
 ✅ **Configurable URL** - Display a custom web portal or use the included local HTML file  
 ✅ **Windows App Integration** - Native ms-avd:// protocol support to launch connections  
@@ -26,12 +26,20 @@ This solution configures Microsoft Edge in kiosk mode as the Windows shell, repl
 
 ## 🔒 How It Works
 
+**With Assigned Access Autologon (UseAssignedAccessAutologon parameter):**
+
 1. **Boot** → System automatically logs on with the KioskUser0 account
 2. **Launch** → Microsoft Edge starts in kiosk mode (replaces Explorer shell)
 3. **Navigate** → Edge displays your configured URL (default: local HTML with AVD/W365 launch buttons)
 4. **Connect** → User clicks links with ms-avd:// protocol to launch Windows App
 5. **Session** → User accesses their Azure Virtual Desktop or Windows 365 resources
 6. **Reset** → When closed or idle, Windows App automatically logs off and resets for the next user
+
+**Without Assigned Access Autologon (no UseAssignedAccessAutologon parameter):**
+
+1. **Boot** → System uses existing autologon configuration or requires manual login
+2. **Launch** → After logon, Microsoft Edge starts in kiosk mode (replaces Explorer shell)
+3. **Navigate/Connect/Session/Reset** → Same as above
 
 ## ✅ Prerequisites
 
@@ -60,20 +68,22 @@ This solution configures Microsoft Edge in kiosk mode as the Windows shell, repl
 3. **Follow** the [Implementation Guide](IMPLEMENTATION.md) for installation steps
 4. **Navigate** to the `source/` directory and run the configuration script with your preferred parameters
 
-### Basic Installation Example
+### Installation with Assigned Access Autologon
 
 ```powershell
 # Run with SYSTEM privileges (see documentation for psexec64 instructions)
 .\Set-WindowsAppFromEdgeKioskSettings.ps1 `
+    -UseAssignedAccessAutologon `
     -InstallWindowsApp `
     -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOrIdle' `
     -WindowsAppAutoLogoffTimeInterval 15 `
     -KioskUrl 'file:///c:/kiosksettings/index.html'
 ```
 
-### With Custom Web Portal
+### Installation Preserving Existing Autologon
 
 ```powershell
+# Omit -UseAssignedAccessAutologon to keep your current autologon user
 .\Set-WindowsAppFromEdgeKioskSettings.ps1 `
     -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOrIdle' `
     -WindowsAppAutoLogoffTimeInterval 10 `
@@ -92,6 +102,7 @@ The script provides several configuration parameters:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
+| `UseAssignedAccessAutologon` | Create KioskUser0 with Assigned Access autologon (omit to preserve existing autologon) | Not used (manual/existing autologon) |
 | `InstallWindowsApp` | Auto-download and install Windows App (supports offline installation) | Not installed |
 | `WindowsAppAutoLogoffConfig` | Auto-logoff behavior (Disabled, ResetAppOnCloseOnly, ResetAppAfterConnection, ResetAppOnCloseOrIdle) | Required parameter |
 | `WindowsAppAutoLogoffTimeInterval` | Minutes of idle time before Windows App resets | 15 |
@@ -142,7 +153,9 @@ Modify the default HTML file located at:
 > [!WARNING]
 > **Settings that Break Assigned Access Autologon**
 >
-> The modern Shell Launcher configuration uses **Assigned Access autologon** for the KioskUser0 account. Windows automatically generates a random, highly complex password and stores it in LSA secrets (encrypted storage). [Microsoft documentation](https://learn.microsoft.com/en-us/windows/win32/secauthn/protecting-the-automatic-logon-password)
+> When using the `-UseAssignedAccessAutologon` parameter, the Shell Launcher configuration creates a KioskUser0 account with **Assigned Access autologon**. Windows automatically generates a random, highly complex password and stores it in LSA secrets (encrypted storage). [Microsoft documentation](https://learn.microsoft.com/en-us/windows/win32/secauthn/protecting-the-automatic-logon-password)
+>
+> **Note:** If you omit `-UseAssignedAccessAutologon`, this warning does not apply - you can use your existing autologon configuration.
 >
 > **VERIFIED:** Only the following settings **actually break** Assigned Access autologon:
 > 
