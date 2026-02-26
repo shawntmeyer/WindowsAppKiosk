@@ -631,6 +631,9 @@ Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -
 $null = cmd /c lgpo.exe /t "$DirGPO\DisablePasswordForUnlock.txt" '2>&1'
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 84 -Message "Disabled password requirement for screen saver lock and wake from sleep via Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
 
+$null = cmd /c lgpo.exe /t "$DirGPO\EnableAutomaticRootCertificateUpdates.txt" '2>&1'
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 88 -Message "Ensured that  automatic root certificate updates were not disabled in Local Group Policy Computer Settings.`nlgpo.exe Exit Code: [$LastExitCode]"
+
 # Check for Group Policy settings that actually break S4U autologon
 # NOTE: Password policies do NOT break S4U autologon (verified 2026-02-25)
 # S4U autologon stores password in LSA secrets and Windows manages it automatically

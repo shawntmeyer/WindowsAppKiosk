@@ -9,6 +9,7 @@ These files use the LGPO.exe tool format for configuring registry-based Group Po
 - `Ctrl+Alt+Del-*.txt` - Control removal of Ctrl+Alt+Del menu options
 - `Edge.txt` - Microsoft Edge browser policies
 - `DisablePasswordForUnlock.txt` - Disable password for screen saver and wake from sleep
+- `EnableAutomaticRootCertificateUpdates.txt` - Ensure automatic root certificate updates are enabled
 - `PowerSettings.txt` - Power management policies
 
 ## What Breaks Assigned Access Autologon (VERIFIED)
