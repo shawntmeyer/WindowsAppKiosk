@@ -51,6 +51,18 @@ On a device with internet access, download the Windows App MSIX package:
    Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/?linkid=2262633' -OutFile 'WindowsApp.msix'
    ```
 
+3. **Option C: Using WinGet (Recommended)**
+
+   Download the entire package including the MSIX and updated dependencies using Windows Package Manager:
+
+   ```powershell
+   winget download --id 9N1F85V9T8BN --architecture=x64 -d <destination-folder> --accept-package-agreements --accept-source-agreements --skip-license
+   ```
+
+   Replace `<destination-folder>` with your desired download location (e.g., `C:\Temp\WindowsApp`).
+   
+   **Note:** This method automatically downloads the latest dependencies, ensuring you have the most up-to-date versions.
+
 #### Step 2: Transfer Files
 
 Transfer the downloaded MSIX file to the target device and place it in the same folder as the script.

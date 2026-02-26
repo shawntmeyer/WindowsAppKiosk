@@ -7,6 +7,12 @@
     It supports automatic download of the latest version or offline installation from a local MSIX file.
     The script also configures Windows App auto logoff settings to manage user sessions and app data
     based on inactivity, app closure, or successful connections.
+    
+    For offline deployments, you can download the Windows App package including dependencies using:
+    winget download --id 9N1F85V9T8BN --architecture=x64 -d <destination-folder> --accept-package-agreements --accept-source-agreements --skip-license
+    
+    This winget command downloads the MSIX package and the latest dependency files, ensuring you have
+    the most up-to-date versions for offline installation.
 
 .PARAMETER DeploymentType
     Specifies the deployment action. Valid values are 'Install' (default) or 'Uninstall'.
