@@ -262,8 +262,8 @@ If ($DeploymentType -ne "Uninstall") {
     New-ItemProperty -Path $WindowsAppRegPath -Name "DisableAutomaticUpdates" -PropertyType DWORD -Value $DisableAutomaticUpdates -Force | Out-Null
 
     # Configure SkipFRE if specified
+    $Windows365RegPath = "HKLM:\SOFTWARE\Microsoft\Windows365"
     if ($SkipFirstRunExperience) {
-        $Windows365RegPath = "HKLM:\SOFTWARE\Microsoft\Windows365"
         Write-Output "Configuring Windows App to skip First Run Experience"
         if (-not (Test-Path $Windows365RegPath)) {
             New-Item -Path $Windows365RegPath -Force | Out-Null
