@@ -8,6 +8,18 @@
     The script also configures Windows App auto logoff settings to manage user sessions and app data
     based on inactivity, app closure, or successful connections.
     
+    DEPLOYMENT METHODOLOGY:
+    - For NEW users: Provisions the app so it's automatically registered on first logon
+    - For EXISTING users: Configures Active Setup to register the app at next logon
+    - Active Setup runs once per user per version, ensuring all users get the latest provisioned version
+    
+    UPGRADE SUPPORT:
+    When you re-run this script with a newer Windows App version:
+    - The provisioned package is updated
+    - Active Setup version is automatically updated to match the provisioned package version
+    - All existing users will get the updated version at their next logon
+    - Active Setup's built-in version tracking ensures it runs only once per user per version
+    
     For offline deployments, you can download the Windows App package including dependencies using:
     winget download --id 9N1F85V9T8BN --architecture=x64 -d <destination-folder> --accept-package-agreements --accept-source-agreements --skip-license
     
@@ -69,6 +81,11 @@
     .\Deploy-WindowsApp.ps1 -DisableAutomaticUpdates 2 -SkipFirstRunExperience
     Installs Windows App with updates from Microsoft Store disabled.
 
+.EXAMPLE
+    .\Deploy-WindowsApp.ps1
+    Run this again with a newer MSIX file to upgrade Windows App.
+    The provisioned package is updated and Active Setup triggers registration for all existing users at their next logon.
+
 .NOTES
     File Name      : Deploy-WindowsApp.ps1
     Prerequisite   : Windows 10/11 with AppX support
@@ -82,12 +99,16 @@
       - DisableAutomaticUpdates (DWORD): 0=Enable updates, 1=Disable updates, 2=Disable Store updates, 3=Disable CDN updates
     - HKLM:\SOFTWARE\Microsoft\Windows365
       - SkipFRE (DWORD): 1=Skip First Run Experience
+    - HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\{B5F6E1A9-4D79-4C1F-9D8B-7E2F4A3C6D8E}
+      - Version (String): Provisioned package version (e.g., "1.24324.2316.0")
+      - StubPath (ExpandString): Command to register Windows App for each user
+      - Note: Active Setup runs once per user when HKLM Version differs from HKCU Version
     
-    For more information on auto logoff, see:
-    https://learn.microsoft.com/en-us/windows-app/windowsautologoff
-    
-    For more information on configuring updates, see:
-    https://learn.microsoft.com/en-us/windows-app/configure-updates-windows
+    Active Setup Behavior:
+    - Automatically registers Windows App for existing users at next logon
+    - Runs once per user per provisioned version
+    - Windows manages version tracking in each user's HKCU registry
+    - Upgrading the provisioned package triggers re-registration for all users
 
 .LINK
     https://learn.microsoft.com/en-us/windows-app/overview
@@ -97,6 +118,9 @@
 
 .LINK
     https://learn.microsoft.com/en-us/windows-app/configure-updates-windows
+
+.LINK
+    https://helgeklein.com/blog/active-setup-explained/
 #>
 
 Param
@@ -191,31 +215,43 @@ If ($DeploymentType -ne "Uninstall") {
 
     $DependenciesPath = (Get-ChildItem -Path (Join-Path -Path $PSScriptRoot -ChildPath "Dependencies") -filter *.appx).FullName
 
-    # Provision the app with dependencies
+    # Provision the app for NEW users (created after this script runs)
+    Write-Output "Provisioning Windows App for new user profiles"
     Add-AppxProvisionedPackage -Online -PackagePath $MSIXPath -DependencyPackagePath $DependenciesPath -SkipLicense
+    
     if ($tempDir -and (Test-Path -Path $tempDir)) {
         Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    Write-Output "Configuring RunOnce for Windows App installation on first logon for Default User profile"
-    $RunOnceCmd = "cmd /c start /min `"`" powershell.exe -EP Bypass -NoLogo -NonInteractive -NoProfile -WindowStyle Hidden -Command `"Add-AppxPackage -RegisterByFamilyName -MainPackage MicrosoftCorporationII.Windows365_8wekyb3d8bbwe -EA SilentlyContinue`""
-
-    # Default User
-    Write-Output "Loading NTUSER.DAT for Default User"
-    REG.EXE LOAD HKLM\Default C:\Users\Default\NTUSER.DAT | Out-Null
-
-    try {        
-        Write-Output "Creating RunOnce 'InstallWindowsApp' for Default User"
-        $DefaultUserRunOncePath = "HKLM:\Default\Software\Microsoft\Windows\CurrentVersion\RunOnce"
-        if (-not (Test-Path $DefaultUserRunOncePath)) {
-            New-Item -Path $DefaultUserRunOncePath -Force | Out-Null
-        }
-        New-ItemProperty -Path $DefaultUserRunOncePath -PropertyType String -Name InstallWindowsApp -Value $RunOnceCmd -Force | Out-Null
+    # Get the provisioned package version to use in Active Setup
+    $ProvisionedPackage = Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -eq "MicrosoftCorporationII.Windows365" }
+    if ($ProvisionedPackage) {
+        $PackageVersion = $ProvisionedPackage.Version
+        Write-Output "Provisioned package version: $PackageVersion"
+    } else {
+        Write-Warning "Could not retrieve provisioned package version. Using timestamp for Active Setup version."
+        $PackageVersion = (Get-Date).ToString("yyyy.MM.dd.HHmm")
     }
-    finally {
-        [GC]::Collect()
-        REG.EXE UNLOAD HKLM\Default | Out-Null
+
+    # Configure Active Setup to register Windows App for existing users at next logon
+    Write-Output "Configuring Active Setup to register Windows App for existing users"
+    
+    $ActiveSetupGuid = "{B5F6E1A9-4D79-4C1F-9D8B-7E2F4A3C6D8E}"
+    $ActiveSetupPath = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\$ActiveSetupGuid"
+    
+    # Create or update Active Setup entry
+    if (-not (Test-Path $ActiveSetupPath)) {
+        New-Item -Path $ActiveSetupPath -Force | Out-Null
     }
+    
+    # The Version value is key - updating this will cause Active Setup to run again for all users
+    New-ItemProperty -Path $ActiveSetupPath -Name "(Default)" -Value "Windows App Registration" -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $ActiveSetupPath -Name "Version" -Value $PackageVersion -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $ActiveSetupPath -Name "StubPath" -Value "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -NonInteractive -NoProfile -Command `"try { Add-AppxPackage -RegisterByFamilyName -MainPackage MicrosoftCorporationII.Windows365_8wekyb3d8bbwe -ErrorAction Stop } catch { `$_ | Out-File -FilePath `$env:LOCALAPPDATA\WindowsApp_Registration.log -Append }`"" -PropertyType ExpandString -Force | Out-Null
+    
+    Write-Output "Active Setup configured successfully (Version: $PackageVersion)"
+    Write-Output "Windows App will be registered automatically for each existing user at their next logon"
+    Write-Output "When you upgrade Windows App, re-running this script will update the version and trigger registration for all users again"
 
     # Configure Windows App Auto Logoff settings
     $WindowsAppRegPath = "HKLM:\SOFTWARE\Microsoft\WindowsApp"
@@ -285,6 +321,15 @@ Else {
     
     # Remove Windows App
     Get-AppxProvisionedPackage -Online | Where-Object { $_.DisplayName -eq "MicrosoftCorporationII.Windows365" } | Remove-AppxProvisionedPackage -Online
+    
+    # Remove Active Setup entry
+    Write-Output "Removing Windows App Active Setup registration..."
+    $ActiveSetupGuid = "{B5F6E1A9-4D79-4C1F-9D8B-7E2F4A3C6D8E}"
+    $ActiveSetupPath = "HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components\$ActiveSetupGuid"
+    if (Test-Path $ActiveSetupPath) {
+        Remove-Item -Path $ActiveSetupPath -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Output "Removed Active Setup entry"
+    }
     
     # Remove Auto Logoff registry keys
     Write-Output "Removing Windows App Auto Logoff registry settings..."
