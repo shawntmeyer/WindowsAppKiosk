@@ -15,7 +15,7 @@ This solution configures Microsoft Edge in kiosk mode as the Windows shell, repl
 
 **Key Features:**
 
-✅ **Optional Automatic Logon** - Optionally use Assigned Access autologon with KioskUser0, or retain your existing autologon configuration  
+✅ **Automatic Logon** - Assigned Access autologon with KioskUser0 for seamless startup  
 ✅ **Edge Kiosk Mode** - Microsoft Edge replaces the Windows shell using Shell Launcher  
 ✅ **Configurable URL** - Display a custom web portal or use the included local HTML file  
 ✅ **Windows App Integration** - Native ms-avd:// protocol support to launch connections  
@@ -26,20 +26,12 @@ This solution configures Microsoft Edge in kiosk mode as the Windows shell, repl
 
 ## 🔒 How It Works
 
-**With Assigned Access Autologon (UseAssignedAccessAutologon parameter):**
-
-1. **Boot** → System automatically logs on with the KioskUser0 account
+1. **Boot** → System automatically logs on with the KioskUser0 account (Assigned Access autologon)
 2. **Launch** → Microsoft Edge starts in kiosk mode (replaces Explorer shell)
 3. **Navigate** → Edge displays your configured URL (default: local HTML with AVD/W365 launch buttons)
 4. **Connect** → User clicks links with ms-avd:// protocol to launch Windows App
 5. **Session** → User accesses their Azure Virtual Desktop or Windows 365 resources
 6. **Reset** → When closed or idle, Windows App automatically logs off and resets for the next user
-
-**Without Assigned Access Autologon (no UseAssignedAccessAutologon parameter):**
-
-1. **Boot** → System uses existing autologon configuration or requires manual login
-2. **Launch** → After logon, Microsoft Edge starts in kiosk mode (replaces Explorer shell)
-3. **Navigate/Connect/Session/Reset** → Same as above
 
 ## ✅ Prerequisites
 
@@ -59,7 +51,6 @@ This solution configures Microsoft Edge in kiosk mode as the Windows shell, repl
 ### Optional
 
 - **🌐 Internet Connection:** Required only if using `-InstallWindowsApp` to auto-download Windows App. For offline/air-gapped environments, see [Windows App Offline Installation Guide](source/Apps/WindowsApp/README.md)
-- **🔐 Device Management:** For some scenarios, devices should be [joined to Entra ID](https://learn.microsoft.com/en-us/entra/identity/devices/concept-directory-join) or [Entra ID Hybrid Joined](https://learn.microsoft.com/en-us/entra/identity/devices/concept-hybrid-join)
 
 ## 🚀 Quick Start
 
@@ -68,27 +59,28 @@ This solution configures Microsoft Edge in kiosk mode as the Windows shell, repl
 3. **Follow** the [Implementation Guide](IMPLEMENTATION.md) for installation steps
 4. **Navigate** to the `source/` directory and run the configuration script with your preferred parameters
 
-### Installation with Assigned Access Autologon
+### Basic Installation
 
 ```powershell
 # Run with SYSTEM privileges (see documentation for psexec64 instructions)
 .\Set-WindowsAppFromEdgeKioskSettings.ps1 `
-    -UseAssignedAccessAutologon `
     -InstallWindowsApp `
     -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOrIdle' `
-    -WindowsAppAutoLogoffTimeInterval 15 `
-    -KioskUrl 'file:///c:/kiosksettings/index.html'
+    -WindowsAppAutoLogoffTimeInterval 15
 ```
 
-### Installation Preserving Existing Autologon
+### Installation with Custom URL
 
 ```powershell
-# Omit -UseAssignedAccessAutologon to keep your current autologon user
+# Point to your own web portal
 .\Set-WindowsAppFromEdgeKioskSettings.ps1 `
     -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOrIdle' `
     -WindowsAppAutoLogoffTimeInterval 10 `
     -KioskUrl 'https://portal.tailspintoys.com/kiosk'
 ```
+
+> [!IMPORTANT]
+> **Upgrading from Legacy Kiosk?** If you have an existing kiosk configuration, you must run `Remove-LegacyKioskSettings.ps1` first to remove old settings before installing the new configuration.
 
 ## 📚 Documentation
 
@@ -101,8 +93,7 @@ This solution configures Microsoft Edge in kiosk mode as the Windows shell, repl
 The script provides several configuration parameters:
 
 | Parameter | Description | Default |
-|-----------|-------------|---------|
-| `UseAssignedAccessAutologon` | Create KioskUser0 with Assigned Access autologon (omit to preserve existing autologon) | Not used (manual/existing autologon) |
+| --------- | ----------- | ------- |
 | `InstallWindowsApp` | Auto-download and install Windows App (supports offline installation) | Not installed |
 | `WindowsAppAutoLogoffConfig` | Auto-logoff behavior (Disabled, ResetAppOnCloseOnly, ResetAppAfterConnection, ResetAppOnCloseOrIdle) | Required parameter |
 | `WindowsAppAutoLogoffTimeInterval` | Minutes of idle time before Windows App resets | 15 |
@@ -110,7 +101,6 @@ The script provides several configuration parameters:
 | `AllowedUrls` | Array of URLs Edge is allowed to navigate to | Protocol handlers (\*auto-includes ms-avd, ms-cloudpc & KioskUrl) |
 | `ConfigureAutomaticMaintenance` | Enable scheduled Windows maintenance | Not configured |
 | `SetPowerPolicies` | Configure power settings for shared devices | Not configured |
-| `RemoveLegacySettings` | Remove old kiosk configurations before install | No removal |
 | `RemoveExistingSettings` | Remove current kiosk settings before install | No removal |
 
 For complete parameter documentation, see the [Implementation Guide](IMPLEMENTATION.md).
@@ -119,10 +109,10 @@ For complete parameter documentation, see the [Implementation Guide](IMPLEMENTAT
 
 Two dedicated scripts are provided for cleanup:
 
-- **`Remove-LegacyKioskSettings.ps1`** - Removes legacy kiosk configurations from previous versions
-- **`Remove-WindowsAppKioskSettings.ps1`** - Completely removes the current Edge-based kiosk configuration
+- **`Remove-LegacyKioskSettings.ps1`** - Removes legacy kiosk configurations from previous versions (run this first if upgrading)
+- **`Remove-WindowsAppKioskSettings.ps1`** - Completely removes the current Shell Launcher V2 based kiosk configuration
 
-These can be called automatically using the `-RemoveLegacySettings` and `-RemoveExistingSettings` parameters, or run independently.
+The `-RemoveExistingSettings` parameter can be used with the configuration script to automatically run `Remove-WindowsAppKioskSettings.ps1` before applying new settings.
 
 ## 🎨 Customization
 
@@ -153,16 +143,14 @@ Modify the default HTML file located at:
 > [!WARNING]
 > **Settings that Break Assigned Access Autologon**
 >
-> When using the `-UseAssignedAccessAutologon` parameter, the Shell Launcher configuration creates a KioskUser0 account with **Assigned Access autologon**. Windows automatically generates a random, highly complex password and stores it in LSA secrets (encrypted storage). [Microsoft documentation](https://learn.microsoft.com/en-us/windows/win32/secauthn/protecting-the-automatic-logon-password)
->
-> **Note:** If you omit `-UseAssignedAccessAutologon`, this warning does not apply - you can use your existing autologon configuration.
+> This solution uses Shell Launcher Assigned Access configuration to create a KioskUser0 account with **Assigned Access autologon**. Windows automatically generates a random, highly complex password and stores it in LSA secrets (encrypted storage). [Microsoft documentation](https://learn.microsoft.com/en-us/windows/win32/secauthn/protecting-the-automatic-logon-password)
 >
 > **VERIFIED:** Only the following settings **actually break** Assigned Access autologon:
-> 
+>
 > ❌ **Interactive logon legal notices** (LegalNoticeText/LegalNoticeCaption)
 >
 > - Forces interactive acknowledgment before logon
-> - **BREAKS autologon completely**
+> - **Delays autologon until a user interactively accepts the logon notice**
 > - Solution: Disable for kiosk devices or display within kiosk app
 >
 > ❌ **Machine inactivity timeout** (InactivityTimeoutSecs)
@@ -222,5 +210,5 @@ For issues, questions, or contributions:
 
 ---
 
-**Version:** 2026.02.19  
+**Version:** 2026.04.03  
 **Maintained by:** Shawn Meyer, Microsoft

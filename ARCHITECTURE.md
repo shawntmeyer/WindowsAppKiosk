@@ -97,17 +97,13 @@
 
 **Recommended: Clean Reinstall**
 
+**Recommended Migration Approach:**
+
 1. Run `Remove-LegacyKioskSettings.ps1` (removes kiosk.bat, GPO, scripts)
 2. Restart
-3. Run `Set-WindowsAppFromEdgeKioskSettings.ps1 -InstallWindowsApp -WindowsAppAutoLogoffConfig ResetAppOnCloseOrIdle`
+3. Run `Set-WindowsAppFromEdgeKioskSettings.ps1 -InstallWindowsApp -WindowsAppAutoLogoffConfig ResetAppOnCloseOrIdle -WindowsAppAutoLogoffTimeInterval 15`
 4. Restart
 5. Verify functionality
-
-**Alternative: In-Place**
-
-1. Run `Set-WindowsAppFromEdgeKioskSettings.ps1 -RemoveLegacySettings -InstallWindowsApp ...`
-2. Restart
-3. Verify functionality
 
 ### 🎓 Key Takeaways for Decision Makers
 
@@ -1658,25 +1654,6 @@ Before migrating from legacy GPO-driven kiosk to Shell Launcher, assess your env
 
 - Requires two reboots
 - More disruptive
-
-#### Option 2: In-Place Migration
-
-**Process:**
-
-1. Run `Set-WindowsAppFromEdgeKioskSettings.ps1 -RemoveLegacySettings -InstallWindowsApp -WindowsAppAutoLogoffConfig ResetAppOnCloseOrIdle -WindowsAppAutoLogoffTimeInterval 15`
-2. Script automatically removes legacy settings before configuring Shell Launcher
-3. Restart system
-4. Verify kiosk functionality
-
-**Advantages:**
-
-- Single command
-- Faster migration
-
-**Disadvantages:**
-
-- Potential conflicts if removal incomplete
-- Harder to troubleshoot if issues occur
 
 ### Migration Testing Plan
 

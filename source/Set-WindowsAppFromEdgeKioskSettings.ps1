@@ -18,7 +18,6 @@
     This script completes a series of configuration tasks to create a secure kiosk environment:
 
     * Shell Launcher configuration to replace Explorer with Microsoft Edge in kiosk mode
-    * Optional automatic logon with the KioskUser0 account created by Assigned Access (when UseAssignedAccessAutologon is specified)
     * Windows App provisioning from the Microsoft download site or via a local source file
     * Windows App automatic logoff and reset configuration to protect credentials
     * AppLocker policy to restrict unauthorized application execution
@@ -42,10 +41,7 @@
     This is a custom version of the Windows App kiosk solution tailored to specific customer requirements. 
     The configuration has been streamlined to focus on a particular deployment scenario: an auto-logon 
     Edge kiosk that launches Windows App connections.
-    
-    The script can optionally remove legacy configurations and existing kiosk settings using the 
-    -RemoveLegacySettings and -RemoveExistingSettings parameters respectively.
-    
+     
     A system restart is required after installation to activate kiosk mode.
 
 .PARAMETER InstallWindowsApp
@@ -85,12 +81,6 @@ This string parameter specifies the URL that Microsoft Edge will open in kiosk m
 .PARAMETER AllowedUrls
 This string array parameter specifies which URLs Microsoft Edge is allowed to navigate to in kiosk mode. The default includes file:// for local content and protocol handlers (ms-avd://, ms-cloudpc://, evo://, workspaces://). All other navigation is blocked. Customize this list to include your specific allowed domains. Examples: 'https://portal.tailspintoys.com', 'tailspintoys.com', 'http://intranet.local'. **Note:** The protocols ms-avd://* and ms-cloudpc://* are always automatically included to ensure Windows App functionality. The KioskUrl is also automatically included unless already covered by an existing pattern.
 
-.PARAMETER UseAssignedAccessAutologon
-This switch parameter determines whether to configure Assigned Access autologon with the automatically created KioskUser0 account. When enabled, the solution uses Edge_AutoLogon.xml which creates KioskUser0 and automatically logs in this account at boot. When omitted, the solution uses Edge.xml which requires manual user logon with an existing account. This allows customers to retain their current autologon configuration or use a different autologon method. Note: When this parameter is NOT used with -RemoveLegacySettings, existing autologon registry settings will be preserved.
-
-.PARAMETER RemoveLegacySettings
-This switch parameter removes legacy kiosk configurations from previous versions or other kiosk implementations before applying the new configuration. This ensures a clean slate by running the Remove-LegacyKioskSettings.ps1 script. When used with UseAssignedAccessAutologon, this will remove existing autologon settings. When used WITHOUT UseAssignedAccessAutologon, existing autologon settings are preserved.
-
 .PARAMETER RemoveExistingSettings
 This switch parameter removes existing Windows App kiosk settings before applying the new configuration. This allows the script to be re-run on a system that has already been configured by running the Remove-WindowsAppKioskSettings.ps1 script.
 
@@ -102,16 +92,15 @@ First, launch PowerShell with SYSTEM privileges using psexec64:
     
     psexec64 -s -i powershell
 
-Then run the script with Assigned Access autologon:
+Then run the script to configure the kiosk:
 
     .\Set-WindowsAppFromEdgeKioskSettings.ps1 `
-        -UseAssignedAccessAutologon `
         -InstallWindowsApp `
         -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOrIdle' `
         -WindowsAppAutoLogoffTimeInterval 15 `
         -KioskUrl 'file:///c:/kiosksettings/index.html'
 
-Installs Windows App, creates KioskUser0 with automatic logon, configures auto-logoff on idle/close, and uses the default local HTML file.
+Installs Windows App, creates KioskUser0 with automatic logon via Assigned Access, configures auto-logoff on idle/close, and uses the default local HTML file.
 
 .EXAMPLE
     # Launch PowerShell with SYSTEM privileges first (psexec64 -s -i powershell)
@@ -122,22 +111,20 @@ Installs Windows App, creates KioskUser0 with automatic logon, configures auto-l
         -KioskUrl 'https://portal.tailspintoys.com/kiosk' `
         -AllowedUrls @('tailspintoys.com')
 
-Configures kiosk without Assigned Access autologon (requires manual user logon or existing autologon configuration). Uses custom web portal URL and allows navigation to tailspintoys.com domain.
+Configures kiosk with custom web portal URL and allows navigation to tailspintoys.com domain. Assigned Access autologon with KioskUser0 is automatically configured.
 
 .EXAMPLE
     # Launch PowerShell with SYSTEM privileges first (psexec64 -s -i powershell)
     
     .\Set-WindowsAppFromEdgeKioskSettings.ps1 `
-        -UseAssignedAccessAutologon `
         -InstallWindowsApp `
         -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOrIdle' `
         -WindowsAppAutoLogoffTimeInterval 15 `
         -SetPowerPolicies `
         -IdleSleepTimeoutMinutes 60 `
-        -ConfigureAutomaticMaintenance `
-        -RemoveLegacySettings
+        -ConfigureAutomaticMaintenance
 
-Full configuration with Assigned Access autologon, power management, automatic maintenance, and legacy settings cleanup (including removal of any existing autologon configuration).
+Full configuration with power management and automatic maintenance. Assigned Access autologon with KioskUser0 is automatically configured.
 
 #>
 [CmdletBinding()]
@@ -183,12 +170,6 @@ param (
     [Parameter()]
     [ValidateNotNullOrEmpty()]
     [string[]]$AllowedUrls = @('file://*', 'ms-avd://*', 'ms-cloudpc://*', 'workspaces://*', 'evo://*'),
-
-    [Parameter()]
-    [switch]$UseAssignedAccessAutologon,
-
-    [Parameter()]
-    [switch]$RemoveLegacySettings,
 
     [Parameter()]
     [switch]$RemoveExistingSettings,
@@ -352,31 +333,14 @@ if (-not $KioskUrlCovered) {
 if (-not $KioskUrlCovered) {
     Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information 74 -Message "KioskUrl '$KioskUrl' is not covered by existing AllowedUrls patterns. Adding it explicitly to the list."
     $AllowedUrls += $KioskUrl
-} Else {
+}
+Else {
     Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information 74 -Message "KioskUrl '$KioskUrl' is already covered by existing AllowedUrls patterns"
 }
 
 #endregion Validate and Update AllowedUrls
 
 #region Remove Previous Versions
-
-If ($RemoveLegacySettings) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 10 -Message "RemoveLegacySettings switch detected. Legacy kiosk configurations will be removed before applying new configuration."
-    $LegacyRemovalScript = Join-Path -Path $Script:Dir -ChildPath "Remove-LegacyKioskSettings.ps1"
-    If (Test-Path -Path $LegacyRemovalScript) {
-        If ($UseAssignedAccessAutologon) {
-            & $LegacyRemovalScript -UseAssignedAccessAutologon
-            Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 11 -Message "Legacy kiosk settings removal completed (including autologon settings)."
-        }
-        Else {
-            & $LegacyRemovalScript
-            Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 11 -Message "Legacy kiosk settings removal completed (preserving existing autologon settings)."
-        }
-    }
-    Else {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 12 -Message "Remove-LegacyKioskSettings.ps1 not found at expected location."
-    }
-}
 
 If ($RemoveExistingSettings) {
     Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 13 -Message "RemoveExistingSettings switch detected. Existing Windows App kiosk settings will be removed before applying new configuration."
@@ -460,15 +424,8 @@ Else {
 
 Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 50 -Message "Starting Assigned Access Configuration Section."
 
-# Select appropriate XML configuration file based on autologon preference
-If ($UseAssignedAccessAutologon) {
-    $ConfigFile = Join-Path -Path $DirShellLauncherSettings -ChildPath "Edge_AutoLogon.xml"
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 51 -Message "Enabling Windows App Shell Launcher with Assigned Access autologon via WMI MDM bridge. This could take several minutes."
-}
-Else {
-    $ConfigFile = Join-Path -Path $DirShellLauncherSettings -ChildPath "Edge.xml"
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 51 -Message "Enabling Windows App Shell Launcher without Assigned Access autologon (manual logon required) via WMI MDM bridge. This could take several minutes."
-}
+$ConfigFile = Join-Path -Path $DirShellLauncherSettings -ChildPath "Edge_AutoLogon.xml"
+Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 51 -Message "Enabling Windows App Shell Launcher with Assigned Access autologon via WMI MDM bridge. This could take several minutes."
         
 $XmlFile = Join-Path -Path $DirKiosk -ChildPath "AssignedAccessShellLauncher.xml"
 Copy-Item -Path $ConfigFile -Destination $XmlFile -Force
@@ -484,28 +441,25 @@ If (Get-AssignedAccessShellLauncher) {
     [xml]$Xml = Get-Content -Path $XmlFile
     Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 53 -Message "Shell Launcher configuration successfully applied."
     
-    If ($UseAssignedAccessAutologon) {
-        # Validate that KioskUser0 account was created (may not exist until after reboot)
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 54 -Message "Checking for KioskUser0 account creation..."
-        $KioskUser = Get-LocalUser -Name 'KioskUser0' -ErrorAction SilentlyContinue
+    # Validate that KioskUser0 account was created (may not exist until after reboot)
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 54 -Message "Checking for KioskUser0 account creation..."
+    $KioskUser = Get-LocalUser -Name 'KioskUser0' -ErrorAction SilentlyContinue
         
-        If ($KioskUser) {
-            Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 55 -Message "SUCCESS: KioskUser0 account exists. Assigned Access autologon should function after reboot."
+    If ($KioskUser) {
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 55 -Message "SUCCESS: KioskUser0 account exists. Assigned Access autologon should function after reboot."
             
-            # Check if account has a password set (Assigned Access auto-generates one)
-            # Note: Windows automatically generates a random, highly complex password stored in LSA secrets
-            $UserInfo = Get-CimInstance -ClassName Win32_UserAccount -Filter "Name='KioskUser0' AND LocalAccount=TRUE"
-            If ($UserInfo.PasswordRequired) {
-                Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 56 -Message "WARNING: KioskUser0 account has PasswordRequired=True. This is expected for Assigned Access autologon (Windows auto-generates a password). If autologon fails, verify that legal notices (LegalNoticeText/Caption) and InactivityTimeoutSecs are not configured."
-            }
-        }
-        Else {
-            Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 57 -Message "KioskUser0 account not found yet. This is normal - the account will be created by Shell Launcher on first reboot. If account is NOT created after reboot, check: 1) Local Security Policy password settings (secedit /export /cfg C:\temp\policy.inf), 2) Domain GPO conflicts (gpresult /h C:\temp\gp.html), 3) Event Viewer for Shell Launcher errors."
+        # Check if account has a password set (Assigned Access auto-generates one)
+        # Note: Windows automatically generates a random, highly complex password stored in LSA secrets
+        $UserInfo = Get-CimInstance -ClassName Win32_UserAccount -Filter "Name='KioskUser0' AND LocalAccount=TRUE"
+        If ($UserInfo.PasswordRequired) {
+            Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 56 -Message "WARNING: KioskUser0 account has PasswordRequired=True. This is expected for Assigned Access autologon (Windows auto-generates a password). If autologon fails, verify that legal notices (LegalNoticeText/Caption) and InactivityTimeoutSecs are not configured."
         }
     }
     Else {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Information -EventId 54 -Message "Assigned Access autologon is NOT enabled. User must log in manually with an existing account to access the kiosk environment."
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Warning -EventId 57 -Message "KioskUser0 account not found yet. This is normal - the account will be created by Shell Launcher on first reboot. If account is NOT created after reboot, check: 1) Local Security Policy password settings (secedit /export /cfg C:\temp\policy.inf), 2) Domain GPO conflicts (gpresult /h C:\temp\gp.html), 3) Event Viewer for Shell Launcher errors."
     }
+    
+
 }
 Else {
     Write-Log -EventLog $EventLog -EventSource $EventSource -EntryType Error -EventId 58 -Message "Shell Launcher configuration failed. Computer should be restarted first."

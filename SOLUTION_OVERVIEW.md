@@ -12,7 +12,7 @@ This repository contains a **customized kiosk solution** for Azure Virtual Deskt
 
 - **Customized for Requirements** - Tailored to specific deployment needs and preferences
 - **Multi-Layered Security** - Shell Launcher with comprehensive access controls
-- **Optional Automatic Logon** - Optionally use Assigned Access autologon with KioskUser0, or retain existing autologon
+- **Automatic Logon** - Assigned Access autologon with KioskUser0 for seamless startup
 - **Edge as Shell** - Browser-based interface for flexibility and familiarity
 - **Windows App Integration** - Native ms-avd:// protocol support
 
@@ -94,7 +94,7 @@ This solution uses multiple Windows technologies working together to create a se
 | Component | Purpose | Implementation |
 |-----------|---------|----------------|
 | **Shell Launcher** | Replaces Explorer with Edge | Assigned Access WMI Bridge CSP |
-| **Automatic Logon** | Optional: Creates and auto-signs in KioskUser0 | Assigned Access Configuration (when UseAssignedAccessAutologon used) |
+| **Automatic Logon** | Creates and auto-signs in KioskUser0 | Assigned Access Configuration |
 | **Edge Kiosk Mode** | Single-app fullscreen browser | Shell Launcher XML configuration |
 | **AppLocker** | Blocks unauthorized applications | Local AppLocker policy |
 | **Group Policy** | System lockdown and restrictions | Multi-user LGPO (non-administrators) |
@@ -106,18 +106,8 @@ This solution uses multiple Windows technologies working together to create a se
 
 ### Sign-In and Launch
 
-**With Assigned Access Autologon (UseAssignedAccessAutologon parameter):**
-
 1. **Power On** → System boots to Windows 11
-2. **Automatic Logon** → KioskUser0 account signs in automatically
-3. **Shell Replacement** → Shell Launcher starts Edge instead of Explorer
-4. **Kiosk Mode** → Edge opens in fullscreen single-app kiosk mode
-5. **Default Page** → Edge displays your configured URL
-
-**Without Assigned Access Autologon (parameter omitted):**
-
-1. **Power On** → System boots to Windows 11
-2. **Manual Login** → User logs in with existing account or existing autologon configuration
+2. **Automatic Logon** → KioskUser0 account signs in automatically via Assigned Access autologon
 3. **Shell Replacement** → Shell Launcher starts Edge instead of Explorer
 4. **Kiosk Mode** → Edge opens in fullscreen single-app kiosk mode
 5. **Default Page** → Edge displays your configured URL
@@ -345,14 +335,8 @@ Replace the default local HTML with your own portal:
 **Example ms-avd:// Links:**
 
 ```html
-<!-- Launch Windows App to specific workspace -->
-<a href="ms-avd:subscribe?url=https://rdweb.wvd.microsoft.com">Connect to AVD</a>
-
-<!-- Launch to Windows 365 -->
-<a href="ms-avd:subscribe?url=https://rdweb.wvd.microsoft.com/api/arm/feeddiscovery">Windows 365</a>
-
-<!-- Custom feed URL -->
-<a href="ms-avd:subscribe?url=https://your-feed-url">Custom Feed</a>
+<!-- Launch Windows App -->
+<a href="ms-avd://>Connect to AVD</a>
 ```
 
 ### Custom Local HTML
@@ -390,7 +374,7 @@ The `-AllowedUrls` parameter controls which URLs Microsoft Edge can navigate to.
 > [!IMPORTANT]
 > **Automatic Inclusions:**
 > 
-> - The protocols `ms-avd://*` and `ms-cloudpc://*` are **always automatically included** in the allowlist, even if you don't specify them. This ensures Windows App can launch Azure Virtual Desktop and Windows 365 connections properly.
+> - The protocols `ms-avd://*`, `ms-cloudpc://*`, `evo://*`, and `workspaces://*` are **always automatically included** in the allowlist, even if you don't specify them. This ensures that the Windows App can launch Azure Virtual Desktop and Windows 365 connections properly. This also ensure that the EVO access is enabled.
 > - Your specified `KioskUrl` is also automatically included (unless already covered by a wildcard like `file://*` or `https://*.tailspintoys.com`).
 
 **Custom Configuration:**
@@ -400,7 +384,7 @@ The `-AllowedUrls` parameter controls which URLs Microsoft Edge can navigate to.
     'https://portal.tailspintoys.com',  # Automatically allows all *.portal.tailspintoys.com subdomains
     'https://avd.microsoft.com',        # Automatically allows all *.avd.microsoft.com subdomains
     'file://*'                          # Allows local files
-    # Note: ms-avd://* and ms-cloudpc://* are automatically added
+    # Note: ms-avd://*, ms-cloudpc://*, evo://*, and workspaces://* are automatically added
 )
 ```
 
@@ -424,10 +408,9 @@ The `-AllowedUrls` parameter controls which URLs Microsoft Edge can navigate to.
 
 **Security Considerations:**
 
-- **Critical protocols are always included:** `ms-avd://*` and `ms-cloudpc://*` are automatically added to ensure Windows App works
+- **Critical protocols are always included:** `ms-avd://*`, `ms-cloudpc://*`, `evo://*`, and `workspaces://*` are automatically added to ensure the Windows App and Amazon Workspaces Client work.
 - **Your KioskUrl is always included:** The script intelligently checks if it's already covered before adding
 - **Include `file://*`** if using local HTML files
-- **Include other protocols if needed:** `evo://*` and `workspaces://*` for other Windows App features
 - **Understand subdomain matching:** `tailspintoys.com` automatically matches ALL subdomains - you don't need `*.tailspintoys.com`
 - **Use `.tailspintoys.com`** (with leading dot) if you want to match ONLY subdomains and exclude the root domain
 - Test thoroughly - overly restrictive lists may break functionality
@@ -435,7 +418,7 @@ The `-AllowedUrls` parameter controls which URLs Microsoft Edge can navigate to.
 **Common Patterns:**
 
 | Pattern | Matches | Use Case |
-|---------|---------|----------|
+| ------- | ------- | -------- |
 | `https://portal.tailspintoys.com` | `https://portal.tailspintoys.com` <br> `https://www.portal.tailspintoys.com` <br> `https://internal.portal.tailspintoys.com` | Portal + all subdomains (Edge auto-matches subdomains) |
 | `portal.tailspintoys.com` | `https://portal.tailspintoys.com` <br> `http://portal.tailspintoys.com` <br> `https://www.portal.tailspintoys.com` | Domain + subdomains (any scheme) |
 | `.tailspintoys.com` | `https://www.tailspintoys.com` <br> `https://internal.tailspintoys.com` <br> **NOT** `https://tailspintoys.com` | Subdomains only (excludes root domain) |
@@ -458,6 +441,7 @@ If your kiosk page has a link that redirects through an external site:
 
 > [!NOTE]
 > **URL Matching Behavior:**
+>
 > - Hostname patterns like `contoso.com` automatically match ALL subdomains (per [Edge URL filter rules](https://learn.microsoft.com/en-us/DeployEdge/edge-learnmmore-url-list-filter%20format))
 > - Example: `portal.company.com` allows `portal.company.com`, `www.portal.company.com`, `internal.portal.company.com`, etc.
 > - To match ONLY subdomains (not root), use `.portal.company.com` (leading dot)
@@ -467,20 +451,17 @@ This is different from AutoLaunchProtocolsFromOrigins (in AllowedOrigins.txt), w
 
 ## Removal and Cleanup
 
-### Automatic Removal with Parameters
+### Automatic Removal with Parameter
 
-Call removal scripts automatically during installation:
+Call the removal script automatically during installation:
 
 ```powershell
-# Remove legacy kiosk configurations before installing
--RemoveLegacySettings
-
-# Remove existing Windows App kiosk settings before installing
+# Remove existing Windows App kiosk settings before reinstalling
 -RemoveExistingSettings
-
-# Remove both
--RemoveLegacySettings -RemoveExistingSettings
 ```
+
+> [!NOTE]
+> **Upgrading from Legacy Kiosk?** The `-RemoveLegacySettings` parameter has been removed. You must manually run `Remove-LegacyKioskSettings.ps1` first, restart, then run the configuration script.
 
 ### Manual Removal Scripts
 
@@ -522,7 +503,7 @@ Both removal scripts:
 | 📋 **Need to check logs** | Event Viewer → Applications and Services Logs → Windows-App-Kiosk |
 | 🔍 **Verify configuration** | Check `HKLM:\Software\Kiosk` registry key for version |
 | 🔄 **Reinstall needed** | Use `-RemoveExistingSettings` parameter |
-| 🧹 **Clean up legacy config** | Use `-RemoveLegacySettings` parameter |
+| 🧹 **Clean up legacy config** | Run `Remove-LegacyKioskSettings.ps1` manually first |
 | ⚙️ **Check Shell Launcher** | `Get-AssignedAccessConfiguration` in PowerShell |
 
 For complete troubleshooting guidance, see the [Implementation Guide](IMPLEMENTATION.md#troubleshooting).

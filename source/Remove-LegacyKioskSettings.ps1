@@ -9,16 +9,7 @@
     * Removes user/group-specific Local Group Policy Objects (GPOs)
     * Forces Group Policy updates to apply the removal
     * Optionally removes existing autologon configuration (when UseAssignedAccessAutologon is specified)
-    * Logs all operations to the Windows-App-Kiosk event log
-    
-    This script is automatically called when using the -RemoveLegacySettings parameter with the main 
-    Set-WindowsAppFromEdgeKioskSettings.ps1 script.
-
-.PARAMETER UseAssignedAccessAutologon
-    When specified, removes existing autologon registry settings and LSA secrets as part of the cleanup 
-    process. This is used when the new configuration will use Assigned Access autologon with KioskUser0.
-    When omitted, existing autologon settings are preserved, allowing customers to retain their current 
-    autologon configuration.
+    * Logs all operations to the Windows-App-Kiosk event log    
 
 .PARAMETER EventLog
     The name of the Windows Event Log where operations will be logged. Default is 'Windows-App-Kiosk'.
@@ -36,23 +27,15 @@
 .EXAMPLE
     .\Remove-LegacyKioskSettings.ps1
     
-    Removes legacy kiosk settings while preserving existing autologon configuration.
-
-.EXAMPLE
-    .\Remove-LegacyKioskSettings.ps1 -UseAssignedAccessAutologon
-    
-    Removes legacy kiosk settings AND existing autologon configuration (for Assigned Access autologon).
+    Removes legacy kiosk settings including autologon settings.
 
 .EXAMPLE
     .\Remove-LegacyKioskSettings.ps1 -EventLog "MyCustomLog" -EventSource "MySource"
     
-    Removes legacy kiosk settings (preserving autologon) and logs to a custom event log.
+    Removes legacy kiosk settings and logs to a custom event log.
 #>
 [CmdletBinding()]
-param (
-    [Parameter()]
-    [switch]$UseAssignedAccessAutologon,
-    
+param (    
     [string]$EventLog = 'Windows-App-Kiosk',
     [string]$EventSource = 'LegacyRemovalScript'
 )`
@@ -173,48 +156,44 @@ Else {
 # Note: Logon/Logoff scripts are managed within the Non-Administrators GPO
 # The GPO removal above handles all script cleanup automatically
 
-# Remove Autologon Configuration from registry (only if UseAssignedAccessAutologon is specified)
-If ($UseAssignedAccessAutologon) {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 20 -EntryType Information -Message "Removing autologon configuration from registry (UseAssignedAccessAutologon specified)."
-    $AutologonRemoved = $false
+# Remove Autologon Configuration from registry
 
-    If (Test-Path -Path $AutologonRegPath) {
-        $AutologonProperties = @(
-            'AutoAdminLogon',
-            'DefaultUserName',
-            'DefaultPassword',
-            'DefaultDomainName',
-            'ForceAutoLogon'
-        )
+Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 20 -EntryType Information -Message "Removing autologon configuration from registry (UseAssignedAccessAutologon specified)."
+$AutologonRemoved = $false
+
+If (Test-Path -Path $AutologonRegPath) {
+    $AutologonProperties = @(
+        'AutoAdminLogon',
+        'DefaultUserName',
+        'DefaultPassword',
+        'DefaultDomainName',
+        'ForceAutoLogon'
+    )
         
-        ForEach ($Property in $AutologonProperties) {
-            If (Get-ItemProperty -Path $AutologonRegPath -Name $Property -ErrorAction SilentlyContinue) {
-                Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 21 -EntryType Information -Message "Removing autologon property: $Property"
-                Remove-ItemProperty -Path $AutologonRegPath -Name $Property -Force -ErrorAction SilentlyContinue
-                $AutologonRemoved = $true
-            }
-        }
-        
-        If ($AutologonRemoved) {
-            Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 22 -EntryType Information -Message "Autologon configuration removed successfully."
-        }
-        Else {
-            Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 23 -EntryType Information -Message "No autologon configuration found."
+    ForEach ($Property in $AutologonProperties) {
+        If (Get-ItemProperty -Path $AutologonRegPath -Name $Property -ErrorAction SilentlyContinue) {
+            Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 21 -EntryType Information -Message "Removing autologon property: $Property"
+            Remove-ItemProperty -Path $AutologonRegPath -Name $Property -Force -ErrorAction SilentlyContinue
+            $AutologonRemoved = $true
         }
     }
-
-    # Remove DefaultPassword from LSA Secrets (if it exists)
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 24 -EntryType Information -Message "Removing DefaultPassword from LSA secrets (if it exists)."
-    Try {
-        Remove-DefaultPasswordFromLSASecrets
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 25 -EntryType Information -Message "LSA secrets cleanup completed successfully."
+        
+    If ($AutologonRemoved) {
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 22 -EntryType Information -Message "Autologon configuration removed successfully."
     }
-    Catch {
-        Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 26 -EntryType Warning -Message "Failed to remove DefaultPassword from LSA secrets: $_"
+    Else {
+        Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 23 -EntryType Information -Message "No autologon configuration found."
     }
 }
-Else {
-    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 20 -EntryType Information -Message "Preserving existing autologon configuration (UseAssignedAccessAutologon not specified)."
+
+# Remove DefaultPassword from LSA Secrets (if it exists)
+Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 24 -EntryType Information -Message "Removing DefaultPassword from LSA secrets (if it exists)."
+Try {
+    Remove-DefaultPasswordFromLSASecrets
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 25 -EntryType Information -Message "LSA secrets cleanup completed successfully."
+}
+Catch {
+    Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 26 -EntryType Warning -Message "Failed to remove DefaultPassword from LSA secrets: $_"
 }
 
 Write-Log -EventLog $EventLog -EventSource $EventSource -EventId 30 -EntryType Information -Message "Phase 1 completed: Machine-level settings cleaned."

@@ -20,13 +20,17 @@
 
 The `Set-WindowsAppFromEdgeKioskSettings.ps1` script accepts the following parameters to customize your kiosk deployment.
 
+> [!IMPORTANT]
+> **Assigned Access Autologon:** This solution automatically configures Assigned Access autologon with the KioskUser0 account. The system will boot and automatically log in to the kiosk environment.
+>
+> **Upgrading from Legacy Kiosk?** If you have an existing kiosk configuration from a previous version, you must run `Remove-LegacyKioskSettings.ps1` first to remove old settings before running this configuration script.
+
 ### Core Parameters
 
 **Table 1:** Primary Configuration Parameters
 
 | Parameter | Type | Required | Default | Description |
-|:----------|:----:|:--------:|:--------|:------------|
-| `UseAssignedAccessAutologon` | Switch | No | Not set | Creates a KioskUser0 account with Assigned Access autologon (automatic login at boot). When **enabled**, uses `Edge_AutoLogon.xml` configuration to create and automatically log in KioskUser0. When **omitted**, uses `Edge.xml` configuration which requires manual user logon or preserves existing autologon configuration. This allows customers to retain their current autologon setup or use different autologon methods. **When used with `-RemoveLegacySettings`, existing autologon configuration is removed. When omitted, existing autologon is preserved.** |
+| :-------- | :--: | :------: | :------ | :---------- |
 | `InstallWindowsApp` | Switch | No | Not set | Automatically downloads and installs the latest Windows App from Microsoft. Supports both online (automatic download) and offline (local MSIX file) installation. For air-gapped environments, place the Windows App MSIX file in `source/Apps/WindowsApp/` directory. **See [Windows App Deployment Guide](source/Apps/WindowsApp/README.md) for detailed offline installation instructions.** |
 | `WindowsAppAutoLogoffConfig` | String | **Yes** | None | Determines Windows App automatic logoff behavior. **Values:** `Disabled`, `ResetAppOnCloseOnly`, `ResetAppAfterConnection`, `ResetAppOnCloseOrIdle`. See [Solution Overview](SOLUTION_OVERVIEW.md#windows-app-auto-logoff-behaviors) for detailed behavior descriptions. **Recommended:** Use `ResetAppOnCloseOrIdle` for public kiosks. |
 | `WindowsAppAutoLogoffTimeInterval` | Integer | Conditional | 15 | Interval in minutes for Windows App to check OS inactivity. **Required when** `WindowsAppAutoLogoffConfig` is set to `ResetAppOnCloseOrIdle`. The app polls every N minutes and triggers reset if N+ minutes of inactivity detected. |
@@ -35,12 +39,13 @@ The `Set-WindowsAppFromEdgeKioskSettings.ps1` script accepts the following param
 
 > [!NOTE]
 > **Understanding URL Controls:**
+>
 > - **`AllowedUrls`** (URLAllowlist) - Controls which URLs Edge **can navigate to**. This is a browser navigation restriction.
 > - **AllowedOrigins** (AutoLaunchProtocolsFromOrigins) - Controls which websites can **auto-launch protocol handlers** (ms-avd://) without user interaction. This is configured via static file and allows all origins (`*`) by default.
-> 
+>
 > Most kiosk scenarios need `AllowedUrls` to restrict browsing. The protocol origin setting is typically left at default.
 >
-> **Auto-Inclusion:** The script automatically ensures `ms-avd://*`, `ms-cloudpc://*`, and your specified `KioskUrl` are always in the allowlist (unless the KioskUrl is already covered by an existing pattern).
+> **Auto-Inclusion:** The script automatically ensures `ms-avd://*`, `ms-cloudpc://*`, `evo://*`, `workspaces://*`, and your specified `KioskUrl` are always in the allowlist (unless the KioskUrl is already covered by an existing pattern).
 >
 > **Subdomain Matching:** Per [Edge URL filter rules](https://learn.microsoft.com/en-us/DeployEdge/edge-learnmmore-url-list-filter%20format), a hostname like `tailspintoys.com` automatically matches ALL subdomains (e.g., `www.tailspintoys.com`, `internal.tailspintoys.com`) without needing wildcards.
 
@@ -49,7 +54,7 @@ The `Set-WindowsAppFromEdgeKioskSettings.ps1` script accepts the following param
 **Table 2:** System Maintenance and Power Configuration Parameters
 
 | Parameter | Type | Required | Default | Description |
-|:----------|:----:|:--------:|:--------|:------------|
+| :-------- | :--: | :------: | :------ | :---------- |
 | `ConfigureAutomaticMaintenance` | Switch | No | Not set | Enables Windows automatic maintenance configuration via Local Group Policy. When set, Windows Update, security scanning, and disk maintenance run at scheduled times. |
 | `MaintenanceActivationTime` | String | No | `00:00:00` | Time when automatic maintenance begins in HH:mm:ss format (24-hour). **Example:** `02:00:00` for 2:00 AM. Used with `ConfigureAutomaticMaintenance`. **Valid format:** `00:00:00` through `23:59:59`. |
 | `MaintenanceRandomDelay` | Integer | No | 2 | Maximum random delay in hours added to maintenance start time. Prevents multiple kiosks from running maintenance simultaneously. **Valid range:** 0-6 hours. Used with `ConfigureAutomaticMaintenance`. |
@@ -61,8 +66,7 @@ The `Set-WindowsAppFromEdgeKioskSettings.ps1` script accepts the following param
 **Table 3:** Removal and Cleanup Parameters
 
 | Parameter | Type | Required | Default | Description |
-|:----------|:----:|:--------:|:--------|:------------|
-| `RemoveLegacySettings` | Switch | No | Not set | Removes legacy kiosk configurations from previous versions or other kiosk implementations before applying new configuration. Runs `Remove-LegacyKioskSettings.ps1` automatically. Useful when upgrading from older kiosk solutions. |
+| :-------- | :--: | :------: | :------ | :---------- |
 | `RemoveExistingSettings` | Switch | No | Not set | Removes existing Windows App kiosk settings before applying new configuration. Runs `Remove-WindowsAppKioskSettings.ps1` automatically with `-Reinstall` flag. Allows clean reinstallation on previously configured systems. |
 | `Version` | Version | No | `1.0.0` | Version string written to `HKLM:\SOFTWARE\Kiosk\version` registry key. Allows tracking of deployed version using configuration management tools (Intune, ConfigMgr, etc.). |
 
@@ -71,7 +75,7 @@ The `Set-WindowsAppFromEdgeKioskSettings.ps1` script accepts the following param
 Some parameters have dependencies or requirements:
 
 | Parameter | Depends On | Notes |
-|:----------|:-----------|:------|
+| :-------- | :--------- | :---- |
 | `WindowsAppAutoLogoffTimeInterval` | `WindowsAppAutoLogoffConfig` = `ResetAppOnCloseOrIdle` | Must specify interval when using idle-based logoff |
 | `IdleSleepTimeoutMinutes` | `SetPowerPolicies` switch | Sleep timeout requires power policies to be configured |
 | `MaintenanceActivationTime` | `ConfigureAutomaticMaintenance` switch | Only used when automatic maintenance is enabled |
@@ -84,76 +88,71 @@ Some parameters have dependencies or requirements:
 
 ### Step-by-Step Installation
 
-**1. Download the Repository**
+> [!IMPORTANT]
+> **Upgrading from a Legacy Kiosk?** If you have an existing kiosk configuration from a previous version, first run:
+>
+> ```powershell
+> .\Remove-LegacyKioskSettings.ps1
+> Restart-Computer -Force
+> ```
+>
+> Then proceed with the installation steps below.
 
-Either clone the repository or download as a ZIP file. If downloading as ZIP, extract to a new folder (e.g., `C:\KioskInstall`).
+1. Download the Repository
 
-**2. Download psexec64**
+   Either clone the repository or download as a ZIP file. If downloading as ZIP, extract to a new folder (e.g., `C:\KioskInstall`).
 
-- Download PSExec from [Microsoft Sysinternals](https://learn.microsoft.com/en-us/sysinternals/downloads/psexec)
-- Extract `psexec64.exe` to any folder (the 64-bit version)
-- Open an **elevated Command Prompt** (Run as Administrator)
+2. Download psexec64
 
-**3. Launch PowerShell as SYSTEM**
+   - Download PSExec from [Microsoft Sysinternals](https://learn.microsoft.com/en-us/sysinternals/downloads/psexec)
+   - Extract `psexec64.exe` to any folder (the 64-bit version)
+   - Open an **elevated Command Prompt** (Run as Administrator)
 
-From the elevated command prompt, run:
+3. Launch PowerShell as SYSTEM
 
-```cmd
-psexec64 -s -i powershell
-```
+   From the elevated command prompt, run:
 
-This launches PowerShell with SYSTEM privileges. A new PowerShell window will open.
+   ```cmd
+   psexec64 -s -i powershell
+   ```
 
-**4. Set Execution Policy**
+   This launches PowerShell with SYSTEM privileges. A new PowerShell window will open.
 
-In the SYSTEM PowerShell window, allow script execution:
+4. Set Execution Policy
 
-```powershell
-Set-ExecutionPolicy Bypass -Scope Process
-```
+   In the SYSTEM PowerShell window, allow script execution:
 
-**5. Navigate to Source Directory**
+   ```powershell
+   Set-ExecutionPolicy Bypass -Scope Process
+   ```
 
-```powershell
-cd C:\KioskInstall\source
-```
+5. Navigate to Source Directory
 
-Adjust the path to match your extraction location.
+   ```powershell
+   cd C:\KioskInstall\source
+   ```
 
-**6. Execute the Configuration Script**
+   Adjust the path to match your extraction location.
 
-Run the script with your desired parameters. See [Configuration Examples](#configuration-examples) below for common scenarios.
+6. Execute the Configuration Script
 
-**7. Restart the System**
+   Run the script with your desired parameters. See [Configuration Examples](#configuration-examples) below for common scenarios.
 
-After the script completes successfully (exit code 3010), restart the computer:
+7. Restart the System
 
-```powershell
-Restart-Computer -Force
-```
+   After the script completes successfully (exit code 3010), restart the computer:
+
+   ```powershell
+   Restart-Computer -Force
+   ```
 
 The kiosk will be active after the restart.
 
 ## Configuration Examples
 
-> [!NOTE]
-> All examples below can be used with or without the `-UseAssignedAccessAutologon` parameter:
-> - **With `-UseAssignedAccessAutologon`:** Creates KioskUser0 with automatic login
-> - **Without `-UseAssignedAccessAutologon`:** Requires manual user login or preserves existing autologon configuration
+### Basic Configuration
 
-### Basic Configuration with Assigned Access Autologon
-
-Minimal configuration with automatic logoff on close and KioskUser0 autologon:
-
-```powershell
-.\Set-WindowsAppFromEdgeKioskSettings.ps1 `
-    -UseAssignedAccessAutologon `
-    -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOnly'
-```
-
-### Basic Configuration Preserving Existing Autologon
-
-Same configuration but keeping your current autologon user:
+Minimal configuration with automatic logoff on close:
 
 ```powershell
 .\Set-WindowsAppFromEdgeKioskSettings.ps1 `
@@ -162,11 +161,10 @@ Same configuration but keeping your current autologon user:
 
 ### Recommended Public Kiosk Configuration
 
-Maximum security with Assigned Access autologon, idle timeout, Windows App installation, and maintenance:
+Maximum security with idle timeout, Windows App installation, and maintenance:
 
 ```powershell
 .\Set-WindowsAppFromEdgeKioskSettings.ps1 `
-    -UseAssignedAccessAutologon `
     -InstallWindowsApp `
     -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOrIdle' `
     -WindowsAppAutoLogoffTimeInterval 15 `
@@ -177,7 +175,8 @@ Maximum security with Assigned Access autologon, idle timeout, Windows App insta
 ```
 
 **What this does:**
-- ✅ Creates KioskUser0 with automatic login
+
+- ✅ Automatically creates KioskUser0 with automatic login
 - ✅ Downloads and installs Windows App
 - ✅ Resets Windows App on close or after 15 minutes of idle time
 - ✅ Schedules maintenance for 2:00 AM with up to 2-hour random delay
@@ -197,6 +196,7 @@ For devices that should sleep when not in use:
 ```
 
 **What this does:**
+
 - ✅ Resets Windows App after 10 minutes of idle time
 - ✅ Configures power settings with 60-minute sleep timeout
 - ✅ Enables automatic maintenance with default schedule (midnight)
@@ -213,6 +213,7 @@ Use your own web portal instead of the local HTML file:
 ```
 
 **What this does:**
+
 - ✅ Opens custom web portal in Edge kiosk mode
 - ✅ Resets Windows App after successful connection
 - ✅ Local HTML file is not created (custom URL used instead)
@@ -230,6 +231,7 @@ Limit which URLs Edge can navigate to in kiosk mode:
 ```
 
 **What this does:**
+
 - ✅ Blocks Edge from navigating to any URL except those specified
 - ✅ Allows `portal.tailspintoys.com` and ALL its subdomains (e.g., `www.portal.tailspintoys.com`, `internal.portal.tailspintoys.com`)
 - ✅ Allows local files and protocol handlers
@@ -240,6 +242,7 @@ Limit which URLs Edge can navigate to in kiosk mode:
 **Security benefit:** Even if a user tries to navigate to another site (via link, redirect, etc.), Edge will block it, keeping them contained to authorized URLs only.
 
 > [!NOTE]
+>
 > **Subdomain Matching:**
 > - Per [Edge URL filter rules](https://learn.microsoft.com/en-us/DeployEdge/edge-learnmmore-url-list-filter%20format), a hostname like `tailspintoys.com` automatically matches ALL subdomains without needing `*.tailspintoys.com`
 > - You don't need to manually include `ms-avd://*`, `ms-cloudpc://*`, or your `KioskUrl` - they're automatically added to ensure Windows App functionality and kiosk accessibility
@@ -250,7 +253,6 @@ Remove existing settings and install fresh configuration:
 
 ```powershell
 .\Set-WindowsAppFromEdgeKioskSettings.ps1 `
-    -RemoveLegacySettings `
     -RemoveExistingSettings `
     -InstallWindowsApp `
     -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOrIdle' `
@@ -258,10 +260,13 @@ Remove existing settings and install fresh configuration:
 ```
 
 **What this does:**
-- ✅ Removes legacy kiosk configurations first
+
 - ✅ Removes existing Windows App kiosk settings
 - ✅ Installs fresh Windows App
 - ✅ Applies new kiosk configuration
+
+> [!NOTE]
+> If you have legacy kiosk settings from previous versions, run `Remove-LegacyKioskSettings.ps1` manually first, restart, then run the configuration script.
 
 ### Air-Gapped / Offline Installation
 
@@ -296,39 +301,35 @@ Fastest deployment for initial testing:
 
 To completely remove the kiosk configuration and restore the system to its original state:
 
-### Using the Removal Script
+1. Launch PowerShell as SYSTEM (using psexec64):
 
-**Step 1:** Launch PowerShell as SYSTEM (using psexec64):
+   ```cmd
+   psexec64 -s -i powershell
+   ```
 
-```cmd
-psexec64 -s -i powershell
-```
+2. Set execution policy:
 
-**Step 2:** Set execution policy:
+   ```powershell
+   Set-ExecutionPolicy Bypass -Scope Process
+   ```
 
-```powershell
-Set-ExecutionPolicy Bypass -Scope Process
-```
+3. Navigate to the source directory:
 
-**Step 3:** Navigate to the source directory:
+   ```powershell
+   cd C:\KioskInstall\source
+   ```
 
-```powershell
-cd C:\KioskInstall\source
-```
+4. Run the removal script:
 
-**Step 4:** Run the removal script:
+   ```powershell
+   .\Remove-WindowsAppKioskSettings.ps1
+   ```
 
-```powershell
-.\Remove-WindowsAppKioskSettings.ps1
-```
+5. Restart the computer:
 
-**Step 5:** Restart the computer:
-
-```powershell
-Restart-Computer -Force
-```
-
-### What Gets Removed
+   ```powershell
+   Restart-Computer -Force
+   ```
 
 The removal script performs the following cleanup:
 
@@ -342,14 +343,6 @@ The removal script performs the following cleanup:
 - ✅ Removes scheduled tasks
 - ✅ Deletes `C:\KioskSettings` directory
 - ✅ Forces Group Policy update
-
-### Selective Removal
-
-To remove only legacy configurations (keep current kiosk settings):
-
-```powershell
-.\Remove-LegacyKioskSettings.ps1
-```
 
 ## Troubleshooting
 
@@ -387,7 +380,7 @@ All script operations are logged to the Windows Event Log for auditing and troub
 **Common Event IDs:**
 
 | Event ID | Source | Type | Description |
-|:---------|:-------|:-----|:------------|
+| :------- | :----- | :--- | :---------- |
 | 1 | ConfigScript | Information | Script execution started |
 | 2-5 | ConfigScript | Information | Removal scripts executed |
 | 199 | ConfigScript | Information | Script completed successfully |
@@ -410,6 +403,7 @@ Get-WinEvent -LogName 'Windows-App-Kiosk' -MaxEvents 100 |
 **Symptoms:** Script exits immediately with reboot pending message
 
 **Solution:**
+
 ```powershell
 # Force restart and retry
 Restart-Computer -Force
@@ -421,15 +415,21 @@ Restart-Computer -Force
 **Symptoms:** Clicking ms-avd:// links does nothing
 
 **Solutions:**
+
 1. Verify Windows App is installed:
+
    ```powershell
    Get-AppxPackage -Name "*WindowsApp*" -AllUsers
    ```
+
 2. Check protocol handler registration:
+
    ```powershell
    Get-ItemProperty "HKLM:\SOFTWARE\Classes\ms-avd"
    ```
+
 3. Reinstall Windows App:
+
    ```powershell
    .\Set-WindowsAppFromEdgeKioskSettings.ps1 -InstallWindowsApp -RemoveExistingSettings -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOnly'
    ```
@@ -443,21 +443,23 @@ Restart-Computer -Force
 **Solutions:**
 
 1. **Check if KioskUser0 account exists:**
+
    ```powershell
    Get-LocalUser -Name KioskUser0
    ```
-   
+
 2. **Check for settings that break autologon (VERIFIED):**
+
    ```powershell
    # Check for legal notices (these BREAK autologon)
    Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" | Select-Object LegalNoticeText, LegalNoticeCaption, InactivityTimeoutSecs
    ```
-   
+
    **Settings that BREAK autologon:**
    - `LegalNoticeText` - Must be empty/not configured
    - `LegalNoticeCaption` - Must be empty/not configured
    - `InactivityTimeoutSecs` - Must be 0 or not configured
-   
+
    **Settings that DO NOT break autologon:**
    - ✅ Password complexity requirements (works fine)
    - ✅ Minimum password length (works fine)
@@ -465,6 +467,7 @@ Restart-Computer -Force
    - ✅ Account lockout threshold (works fine)
 
 3. **Check for domain GPO conflicts (domain-joined systems):**
+
    ```powershell
    # Generate Group Policy results report
    gpresult /h C:\temp\gpreport.html
@@ -474,7 +477,7 @@ Restart-Computer -Force
    # Look for: Interactive logon: Message text/title for users attempting to log on
    # Look for: Interactive logon: Machine inactivity limit
    ```
-   
+
    **Domain GPO Override Solutions:**
    - Contact your domain administrator to create a separate OU for kiosk devices
    - Request GPO exemption for legal notices and inactivity timeout
@@ -482,6 +485,7 @@ Restart-Computer -Force
    - Display legal notice within kiosk application as compensating control
 
 4. **Check Shell Launcher status:**
+
    ```powershell
    # Verify Shell Launcher configuration exists
    Get-AssignedAccessShellLauncher
@@ -491,6 +495,7 @@ Restart-Computer -Force
    ```
 
 6. **Manual KioskUser0 account fix (if account exists but won't auto-login):**
+
    ```powershell
    # Remove password requirement
    $User = [ADSI]"WinNT://./KioskUser0,user"
@@ -511,6 +516,7 @@ Restart-Computer -Force
 **Symptoms:** Cannot type anything in kiosk
 
 **Solution:** Keyboard Filter may have blocked too many keys. Use emergency access to break out and reconfigure:
+
 ```powershell
 # After emergency access, check keyboard filter status
 Get-WindowsOptionalFeature -Online -FeatureName Client-KeyboardFilter
@@ -524,16 +530,22 @@ Disable-WindowsOptionalFeature -Online -FeatureName Client-KeyboardFilter -NoRes
 **Symptoms:** Edge opens but shows error page or blank screen
 
 **Solutions:**
+
 1. Check if custom URL is accessible:
+
    ```powershell
    # Test URL connectivity
    Invoke-WebRequest -Uri "https://your-portal-url" -UseBasicParsing
    ```
+
 2. Verify local HTML file exists (if using default):
+
    ```powershell
    Test-Path "C:\KioskSettings\Index.html"
    ```
+
 3. Check Edge kiosk configuration:
+
    ```powershell
    Get-ItemProperty "HKLM:\SOFTWARE\Policies\Microsoft\Edge" -ErrorAction SilentlyContinue
    ```
@@ -543,15 +555,21 @@ Disable-WindowsOptionalFeature -Online -FeatureName Client-KeyboardFilter -NoRes
 **Symptoms:** Normal login screen appears instead of automatic KioskUser0 logon
 
 **Solution:**
+
 1. Verify Assigned Access configuration is applied:
+
    ```powershell
    Get-AssignedAccessConfiguration
    ```
+
 2. Check if KioskUser0 account exists:
+
    ```powershell
    Get-LocalUser | Where-Object { $_.Name -eq 'KioskUser0' }
    ```
+
 3. If configuration is missing, reinstall:
+
    ```powershell
    .\Set-WindowsAppFromEdgeKioskSettings.ps1 -RemoveExistingSettings -WindowsAppAutoLogoffConfig 'ResetAppOnCloseOrIdle' -WindowsAppAutoLogoffTimeInterval 15
    ```
@@ -561,10 +579,13 @@ Disable-WindowsOptionalFeature -Online -FeatureName Client-KeyboardFilter -NoRes
 **Symptoms:** Windows App stays signed in after idle time
 
 **Solutions:**
+
 1. Verify Windows App registry settings:
+
    ```powershell
    Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\WindowsApp" -ErrorAction SilentlyContinue
    ```
+
 2. Check expected values based on configuration:
    - `ResetAppOnCloseOnly`: `AutoLogoffEnable = 1`
    - `ResetAppAfterConnection`: `AutoLogoffOnSuccessfulConnect = 1`
@@ -635,6 +656,7 @@ if (Test-Path "C:\KioskSettings") {
 ```
 
 **Expected Results:**
+
 - ✓ All checks should show green or yellow (yellow for Keyboard Filter before first reboot)
 - ✓ Version should match your deployment version
 - ✓ Windows App should be installed

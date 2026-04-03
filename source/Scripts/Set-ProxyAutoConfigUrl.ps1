@@ -9,7 +9,6 @@ $WinInetPath = 'Software\Microsoft\Windows\CurrentVersion\Internet Settings'
 
 $DefaultUserProfilePath = "$env:SystemDrive\Users\Default"
 $DefaultUserNTUserDat = Join-Path -Path $DefaultUserProfilePath -ChildPath 'NTUSER.DAT'
-$DefaultUserSettingsRemoved = $false
 
 If (Test-Path -Path $DefaultUserNTUserDat) {
     Write-Output "Loading default user registry hive from: $DefaultUserNTUserDat"
@@ -49,7 +48,7 @@ If (Test-Path -Path $DefaultUserNTUserDat) {
 $proxyConfig = [PSCustomObject]@{
     Proxy         = ""
     ProxyBypass   = ""
-    AutoconfigUrl = $PacUrl
+    AutoconfigUrl = "$PacUrl"
     AutoDetect    = $false
 }
 
